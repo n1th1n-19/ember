@@ -1,0 +1,14 @@
+[package]
+name = "ember-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ember-core = { path = "../core" }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+default-features = false
+features = ["wgpu"]

@@ -6,5 +6,7 @@ pub mod battery;
 pub mod fans;
 pub mod gpu;
 pub mod sample;
+pub mod series;
+pub mod temps;
 
 pub use sample::{Sampler, Snapshot};

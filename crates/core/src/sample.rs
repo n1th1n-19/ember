@@ -10,6 +10,8 @@ pub struct Snapshot {
     pub cpu_percent: Option<f32>,
     pub per_core: Vec<f32>,
     pub cpu_mhz: Option<u64>,
+    /// hardware max clock (cpufreq cpuinfo_max_freq), for gauges
+    pub cpu_max_mhz: Option<u64>,
     pub cpu_brand: String,
     pub load: Option<[f64; 3]>,
     pub uptime_s: Option<u64>,
@@ -177,6 +179,10 @@ impl Sampler {
             cpu_percent: (!cpus.is_empty()).then(|| s.global_cpu_usage()),
             per_core: cpus.iter().map(|c| c.usage()).collect(),
             cpu_mhz: cpus.iter().map(|c| c.frequency()).max().filter(|&f| f > 0),
+            cpu_max_mhz: std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
+                .ok()
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .map(|khz| khz / 1000),
             cpu_brand: cpus.first().map(|c| c.brand().trim().to_string()).unwrap_or_default(),
             load: System::load_average().ok().map(|l| [l.one, l.five, l.fifteen]),
             uptime_s: System::uptime().ok(),
