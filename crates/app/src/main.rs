@@ -48,6 +48,7 @@ pub enum Message {
     Open(Page),
     ToggleMotion,
     ToggleTheme,
+    ToggleRange,
 }
 
 /// 60 one-second samples per chart.
@@ -67,9 +68,28 @@ pub struct History {
 }
 
 impl History {
-    fn new() -> Self {
-        let s = || Series::new(HISTORY);
+    fn new(cap: usize) -> Self {
+        let s = || Series::new(cap);
         Self { cpu: s(), mem: s(), swap: s(), rx: s(), tx: s(), disk_r: s(), disk_w: s(), cpu_temp: s(), battery: s(), gpu_clock: s() }
+    }
+
+    /// 1-hour history from emberd's file (empty if the daemon isn't running).
+    fn from_file() -> Self {
+        use ember_core::history::{read_last, default_path, Field, KEEP};
+        let mut h = Self::new(KEEP);
+        for r in read_last(&default_path(), KEEP).unwrap_or_default() {
+            h.cpu.push(r.get(Field::Cpu));
+            h.mem.push(r.get(Field::Mem));
+            h.swap.push(r.get(Field::Swap));
+            h.rx.push(r.get(Field::Rx));
+            h.tx.push(r.get(Field::Tx));
+            h.disk_r.push(r.get(Field::DiskR));
+            h.disk_w.push(r.get(Field::DiskW));
+            h.cpu_temp.push(r.get(Field::CpuTemp));
+            h.battery.push(r.get(Field::Battery));
+            h.gpu_clock.push(r.get(Field::GpuClock));
+        }
+        h
     }
 
     fn push(&mut self, s: &Snapshot) {
@@ -108,13 +128,26 @@ pub struct App {
     page: Page,
     sampler: Sampler,
     pub snap: Snapshot,
-    pub hist: History,
+    hist_short: History,
+    hist_long: History,
+    /// charts show the last hour (from emberd) instead of the last 60 s
+    pub long_range: bool,
+    samples: u64,
     pub pose: u64,
     pub motion: bool,
     pub bursts: Bursts,
 }
 
 impl App {
+    /// History behind every chart for the current range.
+    pub fn hist(&self) -> &History {
+        if self.long_range { &self.hist_long } else { &self.hist_short }
+    }
+
+    pub fn range_label(&self) -> &'static str {
+        if self.long_range { "last hour" } else { "last 60 s" }
+    }
+
     /// Pose counter for art, frozen when motion is off.
     pub fn anim(&self) -> u64 {
         if self.motion { self.pose } else { 0 }
@@ -153,7 +186,7 @@ impl App {
 
 impl cosmic::Application for App {
     type Executor = cosmic::executor::Default;
-    type Flags = Page;
+    type Flags = (Page, bool);
     type Message = Message;
     const APP_ID: &'static str = "io.github.n1th1n_19.Ember";
 
@@ -164,7 +197,7 @@ impl cosmic::Application for App {
         &mut self.core
     }
 
-    fn init(core: Core, start: Page) -> (Self, Task<Message>) {
+    fn init(core: Core, (start, long): (Page, bool)) -> (Self, Task<Message>) {
         let mut nav = nav_bar::Model::default();
         for p in Page::ALL {
             nav.insert().text(p.name()).data(p);
@@ -173,9 +206,9 @@ impl cosmic::Application for App {
         // first CPU % needs a short gap after priming
         std::thread::sleep(Duration::from_millis(250));
         let snap = sampler.sample();
-        let mut hist = History::new();
-        hist.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist, pose: 0, motion: true, bursts: Bursts::default() };
+        let mut hist_short = History::new(HISTORY);
+        hist_short.push(&snap);
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, motion: true, bursts: Bursts::default() };
         app.open(start);
         (app, Task::none())
     }
@@ -195,7 +228,9 @@ impl cosmic::Application for App {
     fn header_end(&self) -> Vec<Element<'_, Message>> {
         let motion = if self.motion { "Motion: on" } else { "Motion: off" };
         let theme = if ember_ui::ink::pal().dark { "Theme: dark" } else { "Theme: light" };
+        let range = if self.long_range { "Range: 1 h" } else { "Range: 60 s" };
         vec![
+            widget::button::text(range).on_press(Message::ToggleRange).into(),
             widget::button::text(theme).on_press(Message::ToggleTheme).into(),
             widget::button::text(motion).on_press(Message::ToggleMotion).into(),
         ]
@@ -205,12 +240,22 @@ impl cosmic::Application for App {
         match msg {
             Message::Sample => {
                 self.snap = self.sampler.sample();
-                self.hist.push(&self.snap);
+                self.hist_short.push(&self.snap);
+                self.samples += 1;
+                if self.long_range && self.samples.is_multiple_of(10) {
+                    self.hist_long = History::from_file();
+                }
                 self.update_bursts();
             }
             Message::Pose => self.pose = self.pose.wrapping_add(1),
             Message::Open(p) => self.open(p),
             Message::ToggleMotion => self.motion = !self.motion,
+            Message::ToggleRange => {
+                self.long_range = !self.long_range;
+                if self.long_range {
+                    self.hist_long = History::from_file();
+                }
+            }
             Message::ToggleTheme => ember_ui::ink::set_dark(!ember_ui::ink::pal().dark),
         }
         Task::none()
@@ -241,5 +286,6 @@ fn main() -> cosmic::iced::Result {
         .and_then(|i| args.get(i + 1))
         .and_then(|name| Page::ALL.into_iter().find(|p| p.name().eq_ignore_ascii_case(name) || (name == "temps" && *p == Page::Temps)))
         .unwrap_or(Page::Overview);
-    cosmic::app::run::<App>(Settings::default().size(Size::new(1180.0, 800.0)).size_limits(cosmic::iced::Limits::NONE.min_width(720.0).min_height(560.0)), start)
+    let long = args.windows(2).any(|w| w[0] == "--range" && w[1] == "1h");
+    cosmic::app::run::<App>(Settings::default().size(Size::new(1180.0, 800.0)).size_limits(cosmic::iced::Limits::NONE.min_width(720.0).min_height(560.0)), (start, long))
 }

@@ -1,0 +1,10 @@
+[package]
+name = "emberd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ember-core = { path = "../core" }
+notify-rust = { version = "4.19.0", default-features = false, features = ["z"] }

@@ -199,8 +199,8 @@ fn cpu(f: &mut Frame, b: Rectangle, a: &App) {
     };
     art::cpu::draw(f, art_r, &art::cpu::Engine { total, cores: &s.per_core, clock }, a.anim());
     let (top, bot) = split_v(charts, 0.6, 18.0);
-    let lr = chart_label(f, top, "Last 60 s");
-    chart::area(f, lr, &a.hist.cpu, 100.0, RED);
+    let lr = chart_label(f, top, a.range_label());
+    chart::area(f, lr, &a.hist().cpu, 100.0, RED);
     let lr = chart_label(f, bot, "Per core");
     chart::bars(f, lr, &s.per_core);
 }
@@ -225,10 +225,10 @@ fn memory(f: &mut Frame, b: Rectangle, a: &App) {
     let (art_r, charts) = frame(f, b, &d, a.anim());
     art::mem::draw(f, art_r, s.mem_percent().unwrap_or(0.0) / 100.0, swap.unwrap_or(0.0), a.anim());
     let (top, bot) = split_v(charts, 0.62, 18.0);
-    let lr = chart_label(f, top, "RAM · last 60 s");
-    chart::area(f, lr, &a.hist.mem, 100.0, MAGENTA);
-    let bot = chart_label(f, bot, "Swap · last 60 s");
-    chart::area(f, bot, &a.hist.swap, 100.0, GREY);
+    let lr = chart_label(f, top, &format!("RAM · {}", a.range_label()));
+    chart::area(f, lr, &a.hist().mem, 100.0, MAGENTA);
+    let bot = chart_label(f, bot, &format!("Swap · {}", a.range_label()));
+    chart::area(f, bot, &a.hist().swap, 100.0, GREY);
 }
 
 fn disks(f: &mut Frame, b: Rectangle, a: &App) {
@@ -243,8 +243,8 @@ fn disks(f: &mut Frame, b: Rectangle, a: &App) {
         big: opt(main, |d| format!("{:.0}%", d.used as f64 / d.total.max(1) as f64 * 100.0)),
         sub: opt(main, |d| format!("{} of {}  ·  {}", bytes(d.used as f64), bytes(d.total as f64), d.mount)),
         details: vec![
-            ("Read", rate(a.hist.disk_r.last().map(f64::from))),
-            ("Write", rate(a.hist.disk_w.last().map(f64::from))),
+            ("Read", rate(a.hist().disk_r.last().map(f64::from))),
+            ("Write", rate(a.hist().disk_w.last().map(f64::from))),
             ("Disks", list.len().to_string()),
         ],
         body_values: false,
@@ -260,9 +260,9 @@ fn disks(f: &mut Frame, b: Rectangle, a: &App) {
         })
         .collect();
     art::disk::draw(f, art_r, &drawers, a.anim());
-    let max = rate_max(&a.hist.disk_r, &a.hist.disk_w);
-    let lr = chart_label(f, charts, "Read (up) · write (down) · last 60 s");
-    chart::mirrored(f, lr, &a.hist.disk_r, &a.hist.disk_w, max, CYAN, RED);
+    let max = rate_max(&a.hist().disk_r, &a.hist().disk_w);
+    let lr = chart_label(f, charts, &format!("Read (up) · write (down) · {}", a.range_label()));
+    chart::mirrored(f, lr, &a.hist().disk_r, &a.hist().disk_w, max, CYAN, RED);
 }
 
 fn network(f: &mut Frame, b: Rectangle, a: &App) {
@@ -281,15 +281,15 @@ fn network(f: &mut Frame, b: Rectangle, a: &App) {
         label: "Download",
         big: rate(s.net_rx),
         sub: format!("Upload {}", rate(s.net_tx)),
-        details: vec![("Down", rate(s.net_rx)), ("Up", rate(s.net_tx)), ("Peak down", rate(a.hist.rx.max().map(f64::from)))],
+        details: vec![("Down", rate(s.net_rx)), ("Up", rate(s.net_tx)), ("Peak down", rate(a.hist().rx.max().map(f64::from)))],
         body_values: false,
         burst: burst_age(a, a.bursts.net).map(|age| ("FWOOSH", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
     art::net::draw(f, art_r, level, rx > 1e3, tx > 1e3, a.anim());
-    let max = rate_max(&a.hist.rx, &a.hist.tx);
-    let lr = chart_label(f, charts, "Download (up) · upload (down) · last 60 s");
-    chart::mirrored(f, lr, &a.hist.rx, &a.hist.tx, max, CYAN, RED);
+    let max = rate_max(&a.hist().rx, &a.hist().tx);
+    let lr = chart_label(f, charts, &format!("Download (up) · upload (down) · {}", a.range_label()));
+    chart::mirrored(f, lr, &a.hist().rx, &a.hist().tx, max, CYAN, RED);
 }
 
 fn temps(f: &mut Frame, b: Rectangle, a: &App) {
@@ -316,8 +316,8 @@ fn temps(f: &mut Frame, b: Rectangle, a: &App) {
     let cells: Vec<_> = groups.iter().map(|g| (g.name.to_string(), g.celsius, g.critical.unwrap_or(100.0))).collect();
     let lr = chart_label(f, top, "Heat map");
     chart::heat_strip(f, lr, &cells);
-    let lr = chart_label(f, bot, "CPU °C · last 60 s");
-    chart::area(f, lr, &a.hist.cpu_temp, 100.0, RED);
+    let lr = chart_label(f, bot, &format!("CPU °C · {}", a.range_label()));
+    chart::area(f, lr, &a.hist().cpu_temp, 100.0, RED);
 }
 
 fn battery(f: &mut Frame, b: Rectangle, a: &App) {
@@ -346,8 +346,8 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
     chart::ring(f, Point::new(top.x + r + 6.0, top.y + top.height / 2.0), r, bat.and_then(|b| b.health).unwrap_or(0.0), CYAN, &opt(bat.and_then(|b| b.health), |h| format!("{:.0}%", h * 100.0)));
     let w = bat.and_then(|b| b.power_w).unwrap_or(0.0);
     chart::gauge(f, Point::new(top.x + r * 2.0 + 40.0 + r * 1.2, top.y + top.height * 0.85), r * 1.2, w / 60.0, &format!("{w:.0} W"));
-    let lr = chart_label(f, bot, "Charge · last 60 s");
-    chart::area(f, lr, &a.hist.battery, 100.0, YELLOW);
+    let lr = chart_label(f, bot, &format!("Charge · {}", a.range_label()));
+    chart::area(f, lr, &a.hist().battery, 100.0, YELLOW);
 }
 
 fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
@@ -380,8 +380,8 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
         ink::bubble(f, ink::inset(art_r, 30.0), Point::new(art_r.x, art_r.y + art_r.height), "No display adapter found", 18.0);
     }
     let max = lead.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32);
-    let lr = chart_label(f, charts, "Clock MHz · last 60 s");
-    chart::area(f, lr, &a.hist.gpu_clock, max, CYAN);
+    let lr = chart_label(f, charts, &format!("Clock MHz · {}", a.range_label()));
+    chart::area(f, lr, &a.hist().gpu_clock, max, CYAN);
 }
 
 fn fans(f: &mut Frame, b: Rectangle, a: &App) {
@@ -450,12 +450,12 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                     _ => 0.0,
                 };
                 art::cpu::draw(f, art_r, &art::cpu::Engine { total: s.cpu_percent.unwrap_or(0.0), cores: &s.per_core, clock }, pose);
-                ("CPU", pct(s.cpu_percent), opt(s.cpu_mhz, |m| format!("{m} MHz")), Some(&a.hist.cpu), 100.0, RED)
+                ("CPU", pct(s.cpu_percent), opt(s.cpu_mhz, |m| format!("{m} MHz")), Some(&a.hist().cpu), 100.0, RED)
             }
             Page::Memory => {
                 let swap = if s.swap_total > 0 { s.swap_used as f32 / s.swap_total as f32 } else { 0.0 };
                 art::mem::draw(f, art_r, s.mem_percent().unwrap_or(0.0) / 100.0, swap, pose);
-                ("MEMORY", pct(s.mem_percent()), format!("{} used", bytes(s.mem_used as f64)), Some(&a.hist.mem), 100.0, MAGENTA)
+                ("MEMORY", pct(s.mem_percent()), format!("{} used", bytes(s.mem_used as f64)), Some(&a.hist().mem), 100.0, MAGENTA)
             }
             Page::Gpu => {
                 let g = s.gpus.iter().find(|g| g.driver.is_some()).or(s.gpus.first());
@@ -464,19 +464,19 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                 let off = s.gpus.iter().filter(|g| g.driver.is_none()).count();
                 let big = g.and_then(|g| g.cur_mhz).map_or_else(|| "OFF".into(), |m| m.to_string());
                 let sub = if off > 0 { format!("MHz · {off} card asleep") } else { "MHz".into() };
-                ("GPU", big, sub, Some(&a.hist.gpu_clock), g.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32), CYAN)
+                ("GPU", big, sub, Some(&a.hist().gpu_clock), g.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32), CYAN)
             }
             Page::Temps => {
                 let groups = ember_core::temps::group(&s.temps);
                 let gauges: Vec<_> = groups.iter().take(3).map(|g| art::temp::Gauge { label: g.name.into(), celsius: g.celsius, critical: g.critical.unwrap_or(100.0) }).collect();
                 art::temp::draw(f, art_r, &gauges, pose);
-                ("TEMPS", opt(s.cpu_temp(), |c| format!("{c:.0}°")), "CPU".into(), Some(&a.hist.cpu_temp), 100.0, RED)
+                ("TEMPS", opt(s.cpu_temp(), |c| format!("{c:.0}°")), "CPU".into(), Some(&a.hist().cpu_temp), 100.0, RED)
             }
             Page::Battery => {
                 let bat = s.batteries.first();
                 let charging = bat.and_then(|b| b.status.as_deref()) == Some("Charging");
                 art::battery::draw(f, art_r, bat.and_then(|b| b.percent), charging, pose);
-                ("BATTERY", opt(bat.and_then(|b| b.percent), |p| format!("{p:.0}%")), bat.and_then(|b| b.status.clone()).unwrap_or_else(|| "--".into()), Some(&a.hist.battery), 100.0, YELLOW)
+                ("BATTERY", opt(bat.and_then(|b| b.percent), |p| format!("{p:.0}%")), bat.and_then(|b| b.status.clone()).unwrap_or_else(|| "--".into()), Some(&a.hist().battery), 100.0, YELLOW)
             }
             _ => {
                 let (rx, tx) = (s.net_rx.unwrap_or(0.0), s.net_tx.unwrap_or(0.0));
@@ -491,7 +491,7 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                     // number big, unit in the subtitle so narrow cards don't overflow
                     let full = opt(s.net_rx, bytes);
                     let (num, unit) = full.split_once(' ').map_or((full.clone(), String::new()), |(n, u)| (n.to_string(), u.to_string()));
-                    ("NETWORK", num, format!("{unit}/s down · up {}", rate(s.net_tx)), Some(&a.hist.rx), rate_max(&a.hist.rx, &a.hist.tx), CYAN)
+                    ("NETWORK", num, format!("{unit}/s down · up {}", rate(s.net_tx)), Some(&a.hist().rx), rate_max(&a.hist().rx, &a.hist().tx), CYAN)
                 }
             }
         };

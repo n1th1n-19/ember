@@ -5,6 +5,7 @@ pub mod alerts;
 pub mod battery;
 pub mod fans;
 pub mod gpu;
+pub mod history;
 pub mod sample;
 pub mod series;
 pub mod temps;

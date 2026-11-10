@@ -37,9 +37,24 @@ pub struct AlertState {
 /// - never fire twice within `cooldown`, even if re-armed
 /// - BatteryLow is inverted (fires when value goes *below* threshold)
 pub fn should_fire(rule: &Rule, value: f32, state: &mut AlertState, now: Instant) -> bool {
-    // TODO(you): implement the hysteresis + cooldown policy. ~8 lines.
-    let _ = (rule, value, state, now);
-    todo!("should_fire")
+    // BatteryLow alerts below the threshold; flip it so one rule works for both.
+    let (v, t) = if rule.metric == Metric::BatteryLow { (-value, -rule.threshold) } else { (value, rule.threshold) };
+    if state.tripped {
+        // re-arm only once the value has backed off past the hysteresis band
+        if v < t - rule.hysteresis {
+            state.tripped = false;
+        }
+        return false;
+    }
+    if v <= t {
+        return false;
+    }
+    state.tripped = true;
+    let cooled = state.last_fired.is_none_or(|last| now.duration_since(last) >= rule.cooldown);
+    if cooled {
+        state.last_fired = Some(now);
+    }
+    cooled
 }
 
 #[cfg(test)]

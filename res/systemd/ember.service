@@ -1,0 +1,14 @@
+[Unit]
+Description=Ember system monitor (history + alerts)
+Documentation=https://github.com/n1th1n-19/ember
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/emberd
+Restart=on-failure
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target
