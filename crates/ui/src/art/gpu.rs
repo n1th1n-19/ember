@@ -103,7 +103,7 @@ pub fn draw(f: &mut Frame, r: Rectangle, awake: bool, speed: f32, hot: bool, pos
         let float = (pose / 6 % 3) as f32 * 5.0;
         for k in 0..3 {
             let p = at(r, 0.86 + k as f32 * 0.05, 0.2 - k as f32 * 0.07) + Vector::new(0.0, -float);
-            ink::text(f, "Z", p, 14.0 + k as f32 * 6.0, DISPLAY, INK, Alignment::Center, Vertical::Center);
+            ink::text(f, "Z", p, 14.0 + k as f32 * 6.0, DISPLAY, ink::pal().scene_line, Alignment::Center, Vertical::Center);
         }
     }
 }

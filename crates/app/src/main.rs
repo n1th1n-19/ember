@@ -47,6 +47,7 @@ pub enum Message {
     Pose,
     Open(Page),
     ToggleMotion,
+    ToggleTheme,
 }
 
 /// 60 one-second samples per chart.
@@ -192,8 +193,12 @@ impl cosmic::Application for App {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
-        let label = if self.motion { "Motion: on" } else { "Motion: off" };
-        vec![widget::button::text(label).on_press(Message::ToggleMotion).into()]
+        let motion = if self.motion { "Motion: on" } else { "Motion: off" };
+        let theme = if ember_ui::ink::pal().dark { "Theme: dark" } else { "Theme: light" };
+        vec![
+            widget::button::text(theme).on_press(Message::ToggleTheme).into(),
+            widget::button::text(motion).on_press(Message::ToggleMotion).into(),
+        ]
     }
 
     fn update(&mut self, msg: Message) -> Task<Message> {
@@ -206,6 +211,7 @@ impl cosmic::Application for App {
             Message::Pose => self.pose = self.pose.wrapping_add(1),
             Message::Open(p) => self.open(p),
             Message::ToggleMotion => self.motion = !self.motion,
+            Message::ToggleTheme => ember_ui::ink::set_dark(!ember_ui::ink::pal().dark),
         }
         Task::none()
     }

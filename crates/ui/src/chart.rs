@@ -37,7 +37,8 @@ fn runs(pts: &[Option<Point>]) -> Vec<Vec<Point>> {
 }
 
 fn paper_box(f: &mut Frame, r: Rectangle) -> Rectangle {
-    ink::boxed(f, r, WHITE, 3.0, 4.0);
+    let p = ink::pal();
+    ink::boxed(f, r, p.chart_bg, 3.0, 4.0);
     let inner = ink::inset(r, 8.0);
     // faint guide lines at 25/50/75%
     let guides = Path::new(|b| {
@@ -47,7 +48,7 @@ fn paper_box(f: &mut Frame, r: Rectangle) -> Rectangle {
             b.line_to(Point::new(inner.x + inner.width, y));
         }
     });
-    f.stroke(&guides, Stroke::default().with_color(Color { a: 0.15, ..INK }).with_width(1.0));
+    f.stroke(&guides, Stroke::default().with_color(Color { a: 0.15, ..p.text }).with_width(1.0));
     inner
 }
 
@@ -81,7 +82,7 @@ fn area_in(f: &mut Frame, r: Rectangle, s: &Series, max: f32, color: Color, flip
             b.move_to(run[0]);
             run[1..].iter().for_each(|p| b.line_to(*p));
         });
-        f.stroke(&line, ink::stroke(3.0));
+        f.stroke(&line, ink::stroke(3.0).with_color(ink::pal().chart_line));
     }
 }
 
@@ -93,7 +94,7 @@ pub fn mirrored(f: &mut Frame, r: Rectangle, up: &Series, down: &Series, max: f3
     let bot = Rectangle::new(Point::new(inner.x, inner.y + half), Size::new(inner.width, half));
     area_in(f, top, up, max, c_up, false);
     area_in(f, bot, down, max, c_down, true);
-    f.stroke(&Path::line(Point::new(inner.x, inner.y + half), Point::new(inner.x + inner.width, inner.y + half)), ink::stroke(2.0));
+    f.stroke(&Path::line(Point::new(inner.x, inner.y + half), Point::new(inner.x + inner.width, inner.y + half)), ink::stroke(2.0).with_color(ink::pal().chart_line));
 }
 
 /// Vertical bars 0..100 (per-core strip). Bar color follows its own level.

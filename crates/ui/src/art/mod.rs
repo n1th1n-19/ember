@@ -185,7 +185,8 @@ impl Block {
 
 /// Floor line across `r` at height `y` with short perspective dashes below.
 pub fn floor(f: &mut Frame, r: Rectangle, y: f32) {
-    f.stroke(&Path::line(Point::new(r.x, y), Point::new(r.x + r.width, y)), ink::stroke(3.0));
+    let line = ink::pal().scene_line;
+    f.stroke(&Path::line(Point::new(r.x, y), Point::new(r.x + r.width, y)), ink::stroke(3.0).with_color(line));
     let dashes = Path::new(|b| {
         let mut x = r.x + 12.0;
         while x < r.x + r.width - 12.0 {
@@ -194,14 +195,14 @@ pub fn floor(f: &mut Frame, r: Rectangle, y: f32) {
             x += 26.0;
         }
     });
-    f.stroke(&dashes, ink::stroke(1.5));
+    f.stroke(&dashes, ink::stroke(1.5).with_color(line));
 }
 
 /// Hatched cast shadow on the floor, thrown to the right of an object's base.
 pub fn cast_shadow(f: &mut Frame, base_l: Point, base_r: Point, reach: f32) {
     let k = Vector::new(reach, reach * 0.18);
     let poly = [base_l, base_r, base_r + k, base_l + k * 0.6];
-    hatch_poly(f, &poly, 5.0, 1.5, INK);
+    hatch_poly(f, &poly, 5.0, 1.5, if ink::pal().dark { Color { a: 0.75, ..INK } } else { INK });
 }
 
 /// Vertical cylinder seen slightly from above. `top` = center of the top ellipse.

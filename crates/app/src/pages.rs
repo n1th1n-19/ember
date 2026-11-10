@@ -40,7 +40,7 @@ impl canvas::Program<Message, Theme, Renderer> for View<'_> {
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
         let mut f = Frame::new(renderer, bounds.size());
         let b = Rectangle::new(Point::ORIGIN, bounds.size());
-        f.fill(&ink::rect(b), PAPER);
+        f.fill(&ink::rect(b), ink::pal().page);
         let a = self.app;
         match self.page {
             Page::Overview => overview(&mut f, b, a),
@@ -75,7 +75,8 @@ struct Detail<'a> {
 fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rectangle) {
     let pad = 28.0;
     let p = Rectangle::new(Point::new(b.x + pad, b.y + pad + 12.0), Size::new(b.width - 2.0 * pad - 6.0, b.height - 2.0 * pad - 18.0));
-    ink::panel(f, p, PAPER);
+    let pal = ink::pal();
+    ink::panel(f, p, pal.panel);
     let inner = ink::inset(p, 20.0);
 
     // details strip: ink ground, paper text
@@ -101,21 +102,21 @@ fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rect
     } else {
         Rectangle::new(upper.position(), Size::new((upper.width * 0.42).min(upper.height * 1.15), upper.height))
     };
-    ink::boxed(f, art, d.ground, 4.0, 5.0);
+    ink::boxed(f, art, ink::ground(d.ground), 4.0, 5.0);
     // decorative halftone in the art box corner (no text sits on it)
     let corner = Rectangle::new(Point::new(art.x + art.width * 0.45, art.y), Size::new(art.width * 0.55, art.height * 0.5));
-    ink::halftone_where(f, ink::inset(corner, 4.0), Color { a: 0.22, ..INK }, 12.0, 0.6, |q| (q.x - corner.x) > (q.y - corner.y) * 0.8);
+    ink::halftone_where(f, ink::inset(corner, 4.0), if pal.dark { Color { a: 0.55, ..d.ground } } else { Color { a: 0.22, ..INK } }, 12.0, 0.6, |q| (q.x - corner.x) > (q.y - corner.y) * 0.8);
 
     let right = if narrow {
         Rectangle::new(Point::new(upper.x, art.y + art.height + 22.0), Size::new(upper.width, upper.height - art.height - 22.0))
     } else {
         Rectangle::new(Point::new(art.x + art.width + 28.0, upper.y), Size::new(upper.width - art.width - 28.0, upper.height))
     };
-    ink::text(f, d.label.to_uppercase(), Point::new(right.x, right.y + 4.0), 15.0, BODY, INK, Alignment::Left, Vertical::Top);
+    ink::text(f, d.label.to_uppercase(), Point::new(right.x, right.y + 4.0), 15.0, BODY, pal.text, Alignment::Left, Vertical::Top);
     let big_size = fit_size(&d.big, right.width - 20.0, (right.height * if narrow { 0.2 } else { 0.24 }).clamp(56.0, 120.0));
     ink::misprint(f, &d.big, Point::new(right.x + 4.0, right.y + 26.0), big_size, WHITE, Alignment::Left, pose / 4);
     let sub_y = right.y + 34.0 + big_size * 1.1;
-    ink::text(f, d.sub.clone(), Point::new(right.x, sub_y), 16.0, BODY, INK, Alignment::Left, Vertical::Top);
+    ink::text(f, d.sub.clone(), Point::new(right.x, sub_y), 16.0, BODY, pal.text, Alignment::Left, Vertical::Top);
 
     if let Some((word, age)) = d.burst {
         let c = Point::new(right.x + right.width - 90.0, right.y + 70.0);
@@ -143,7 +144,7 @@ fn split_v(r: Rectangle, top_frac: f32, gap: f32) -> (Rectangle, Rectangle) {
 }
 
 fn chart_label(f: &mut Frame, r: Rectangle, s: &str) -> Rectangle {
-    ink::text(f, s.to_uppercase(), Point::new(r.x, r.y), 12.0, BODY, INK, Alignment::Left, Vertical::Top);
+    ink::text(f, s.to_uppercase(), Point::new(r.x, r.y), 12.0, BODY, ink::pal().text, Alignment::Left, Vertical::Top);
     Rectangle::new(Point::new(r.x, r.y + 18.0), Size::new(r.width, (r.height - 18.0).max(10.0)))
 }
 
@@ -373,7 +374,7 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
         let speed = g.usage.map(|u| u / 100.0).or_else(|| Some(g.cur_mhz? as f32 / g.max_mhz? as f32)).unwrap_or(0.0);
         art::gpu::draw(f, Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)), g.driver.is_some(), speed, g.usage.is_some_and(|u| u > 85.0), a.anim());
         let note = if g.driver.is_some() { g.name.clone() } else { format!("{} · switched off (integrated mode)", g.vendor) };
-        ink::text(f, note, Point::new(r.center_x(), r.y + r.height - 4.0), 13.0, BODY, INK, Alignment::Center, Vertical::Bottom);
+        ink::text(f, note, Point::new(r.center_x(), r.y + r.height - 4.0), 13.0, BODY, ink::pal().scene_line, Alignment::Center, Vertical::Bottom);
     }
     if gpus.is_empty() {
         ink::bubble(f, ink::inset(art_r, 30.0), Point::new(art_r.x, art_r.y + art_r.height), "No display adapter found", 18.0);
@@ -431,10 +432,17 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
     let s = &a.snap;
     let pose = a.anim();
     for (page, r) in overview_cells(b) {
-        ink::panel(f, r, PAPER);
+        ink::panel(f, r, ink::pal().panel);
         let inner = ink::inset(r, 14.0);
         let art_r = Rectangle::new(Point::new(inner.x, inner.y + 18.0), Size::new(inner.width * 0.5, inner.height - 18.0));
         let num_r = Rectangle::new(Point::new(inner.x + inner.width * 0.52, inner.y + 18.0), Size::new(inner.width * 0.48, inner.height - 18.0));
+        // tinted art box, same grounds as the detail pages
+        let accent = match page {
+            Page::Memory | Page::Gpu | Page::Network => CYAN,
+            _ => YELLOW,
+        };
+        ink::boxed(f, art_r, ink::ground(accent), 3.0, 4.0);
+        let art_r = ink::inset(art_r, 8.0);
         let (title, big, sub, series, max, color): (&str, String, String, Option<&ember_core::series::Series>, f32, Color) = match page {
             Page::Cpu => {
                 let clock = match (s.cpu_mhz, s.cpu_max_mhz) {
@@ -490,7 +498,7 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
         let big_size = fit_size(&big, num_r.width, (num_r.height * 0.26).clamp(48.0, 84.0));
         ink::misprint(f, &big, Point::new(num_r.x, num_r.y + 6.0), big_size, WHITE, Alignment::Left, pose / 4);
         let sub_y = num_r.y + 14.0 + big_size * 1.05;
-        ink::text(f, sub, Point::new(num_r.x, sub_y), 13.0, BODY, INK, Alignment::Left, Vertical::Top);
+        ink::text(f, sub, Point::new(num_r.x, sub_y), 13.0, BODY, ink::pal().text, Alignment::Left, Vertical::Top);
         if let Some(series) = series {
             let top = sub_y + 26.0;
             let ch = Rectangle::new(Point::new(num_r.x, top), Size::new(num_r.width - 6.0, (num_r.y + num_r.height - top - 6.0).max(30.0)));

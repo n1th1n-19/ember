@@ -31,6 +31,70 @@ pub const FONT_FILES: [&[u8]; 3] = [
     include_bytes!("../../../res/fonts/SpaceGrotesk.ttf"),
 ];
 
+/// Page-level colors that change between light and dark. Accents (red, cyan, yellow,
+/// magenta) and the machines themselves keep their print colors in both themes.
+#[derive(Debug, Clone, Copy)]
+pub struct Palette {
+    pub dark: bool,
+    pub page: Color,
+    pub panel: Color,
+    pub text: Color,
+    pub chart_bg: Color,
+    pub chart_line: Color,
+    pub track: Color,
+    /// floor lines, speed lines, loose marks drawn straight onto an art ground
+    pub scene_line: Color,
+}
+
+pub const LIGHT: Palette = Palette {
+    dark: false,
+    page: PAPER,
+    panel: PAPER,
+    text: INK,
+    chart_bg: WHITE,
+    chart_line: INK,
+    track: PAPER,
+    scene_line: INK,
+};
+
+pub const DARK: Palette = Palette {
+    dark: true,
+    page: rgb(0x17, 0x15, 0x1E),
+    panel: rgb(0x22, 0x1F, 0x2C),
+    text: PAPER,
+    chart_bg: rgb(0x13, 0x11, 0x19),
+    chart_line: PAPER,
+    track: rgb(0x2E, 0x2A, 0x3A),
+    scene_line: PAPER,
+};
+
+static DARK_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Current palette (dark by default).
+pub fn pal() -> Palette {
+    if DARK_MODE.load(std::sync::atomic::Ordering::Relaxed) { DARK } else { LIGHT }
+}
+
+pub fn set_dark(on: bool) {
+    DARK_MODE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Art-box ground: the bright accent in light mode; at night a deep color that pairs
+/// with it (darkened yellow turns to mud, so yellow maps to violet). The accent itself
+/// stays in the halftone corner.
+pub fn ground(accent: Color) -> Color {
+    if !pal().dark {
+        return accent;
+    }
+    match accent {
+        a if a == YELLOW => rgb(0x2B, 0x20, 0x48),
+        a if a == CYAN => rgb(0x0A, 0x33, 0x4A),
+        a if a == MAGENTA => rgb(0x46, 0x10, 0x2D),
+        a if a == RED => rgb(0x4A, 0x12, 0x18),
+        a => Color { r: a.r * 0.3 + 0.06, g: a.g * 0.3 + 0.06, b: a.b * 0.3 + 0.08, a: 1.0 },
+    }
+}
+
 /// Register Ember's fonts in iced's global font system. Call once at startup,
 /// before any window exists, so no text gets shaped with a fallback first.
 pub fn load_fonts() {
@@ -219,7 +283,7 @@ pub fn speed_lines(f: &mut Frame, c: Point, r_in: f32, r_out: f32, n: usize, pos
             b.close();
         }
     });
-    f.fill(&rays, INK);
+    f.fill(&rays, pal().scene_line);
 }
 
 /// 20-point SFX burst (shape from comic-verse `.burst`) with the word inside.
