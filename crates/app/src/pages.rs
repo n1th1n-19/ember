@@ -66,6 +66,8 @@ struct Detail<'a> {
     big: String,
     sub: String,
     details: Vec<(&'a str, String)>,
+    /// render detail values in the body font (driver names like "i915" read wrong in Bangers)
+    body_values: bool,
     burst: Option<(&'a str, u64)>,
 }
 
@@ -85,9 +87,10 @@ fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rect
     for (i, (k, v)) in d.details.iter().enumerate() {
         let x = strip.x + 16.0 + i as f32 * col;
         // shrink long values so columns never collide
-        let size = (22.0f32).min((col - 14.0) / (v.chars().count().max(1) as f32 * 0.46)).max(11.0);
+        let (font, em) = if d.body_values { (BODY, 0.56) } else { (DISPLAY, 0.46) };
+        let size = (if d.body_values { 18.0f32 } else { 22.0 }).min((col - 14.0) / (v.chars().count().max(1) as f32 * em)).max(11.0);
         ink::text(f, k.to_uppercase(), Point::new(x, strip.y + 12.0), 12.0, BODY, GREY, Alignment::Left, Vertical::Top);
-        ink::text(f, v.clone(), Point::new(x, strip.y + 30.0), size, DISPLAY, PAPER, Alignment::Left, Vertical::Top);
+        ink::text(f, v.clone(), Point::new(x, strip.y + 30.0), size, font, PAPER, Alignment::Left, Vertical::Top);
     }
 
     let upper = Rectangle::new(inner.position(), Size::new(inner.width, inner.height - strip_h - 20.0));
@@ -109,7 +112,7 @@ fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rect
         Rectangle::new(Point::new(art.x + art.width + 28.0, upper.y), Size::new(upper.width - art.width - 28.0, upper.height))
     };
     ink::text(f, d.label.to_uppercase(), Point::new(right.x, right.y + 4.0), 15.0, BODY, INK, Alignment::Left, Vertical::Top);
-    let big_size = (right.height * if narrow { 0.2 } else { 0.24 }).clamp(56.0, 120.0);
+    let big_size = fit_size(&d.big, right.width - 20.0, (right.height * if narrow { 0.2 } else { 0.24 }).clamp(56.0, 120.0));
     ink::misprint(f, &d.big, Point::new(right.x + 4.0, right.y + 26.0), big_size, WHITE, Alignment::Left, pose / 4);
     let sub_y = right.y + 34.0 + big_size * 1.1;
     ink::text(f, d.sub.clone(), Point::new(right.x, sub_y), 16.0, BODY, INK, Alignment::Left, Vertical::Top);
@@ -123,6 +126,12 @@ fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rect
 
     let charts = Rectangle::new(Point::new(right.x, sub_y + 34.0), Size::new(right.width, (right.y + right.height - sub_y - 34.0).max(40.0)));
     (ink::inset(art, 18.0), charts)
+}
+
+/// Shrink a display size so `s` fits `width` (never below the 48px misprint minimum).
+fn fit_size(s: &str, width: f32, size: f32) -> f32 {
+    let w = ink::approx_width(s, size, DISPLAY) * 1.1 + 12.0;
+    if w > width { (size * width / w).max(48.0) } else { size }
 }
 
 fn split_v(r: Rectangle, top_frac: f32, gap: f32) -> (Rectangle, Rectangle) {
@@ -179,6 +188,7 @@ fn cpu(f: &mut Frame, b: Rectangle, a: &App) {
             ("Temp", opt(s.cpu_temp(), |c| format!("{c:.0}°C"))),
             ("Uptime", dur(s.uptime_s)),
         ],
+        body_values: false,
         burst: burst_age(a, a.bursts.cpu).map(|age| ("SIZZLE!", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -208,6 +218,7 @@ fn memory(f: &mut Frame, b: Rectangle, a: &App) {
             ("Free", bytes(s.mem_total.saturating_sub(s.mem_used) as f64)),
             ("Swap", format!("{} / {}", bytes(s.swap_used as f64), bytes(s.swap_total as f64))),
         ],
+        body_values: false,
         burst: burst_age(a, a.bursts.mem).map(|age| ("GLUG!", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -235,6 +246,7 @@ fn disks(f: &mut Frame, b: Rectangle, a: &App) {
             ("Write", rate(a.hist.disk_w.last().map(f64::from))),
             ("Disks", list.len().to_string()),
         ],
+        body_values: false,
         burst: None,
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -269,6 +281,7 @@ fn network(f: &mut Frame, b: Rectangle, a: &App) {
         big: rate(s.net_rx),
         sub: format!("Upload {}", rate(s.net_tx)),
         details: vec![("Down", rate(s.net_rx)), ("Up", rate(s.net_tx)), ("Peak down", rate(a.hist.rx.max().map(f64::from)))],
+        body_values: false,
         burst: burst_age(a, a.bursts.net).map(|age| ("FWOOSH", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -289,6 +302,7 @@ fn temps(f: &mut Frame, b: Rectangle, a: &App) {
         big: opt(s.cpu_temp(), |c| format!("{c:.0}°")),
         sub: format!("{} sensors · hottest {}", s.temps.len(), opt(hottest, |c| format!("{c:.0}°C"))),
         details: groups.iter().take(5).map(|g| (g.name, format!("{:.0}°C", g.celsius))).collect(),
+        body_values: false,
         burst: burst_age(a, a.bursts.temp).map(|age| ("TOO HOT", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -320,6 +334,7 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
             ("Power", opt(bat.and_then(|b| b.power_w), |w| format!("{w:.1} W"))),
             ("Cell", bat.map_or("--".into(), |b| b.name.clone())),
         ],
+        body_values: false,
         burst: burst_age(a, a.bursts.battery).map(|age| ("PLINK", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -347,6 +362,7 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
             .iter()
             .map(|g| (g.vendor, g.driver.as_ref().map_or_else(|| "switched off".into(), |d| format!("{d} · {}", opt(g.cur_mhz, |m| format!("{m} MHz"))))))
             .collect(),
+        body_values: true,
         burst: None,
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
@@ -355,7 +371,7 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
     for (i, g) in gpus.iter().enumerate() {
         let r = Rectangle::new(Point::new(art_r.x, art_r.y + i as f32 * h), Size::new(art_r.width, h - 10.0));
         let speed = g.usage.map(|u| u / 100.0).or_else(|| Some(g.cur_mhz? as f32 / g.max_mhz? as f32)).unwrap_or(0.0);
-        art::gpu::draw(f, Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)), g.driver.is_some(), speed, a.anim());
+        art::gpu::draw(f, Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)), g.driver.is_some(), speed, g.usage.is_some_and(|u| u > 85.0), a.anim());
         let note = if g.driver.is_some() { g.name.clone() } else { format!("{} · switched off (integrated mode)", g.vendor) };
         ink::text(f, note, Point::new(r.center_x(), r.y + r.height - 4.0), 13.0, BODY, INK, Alignment::Center, Vertical::Bottom);
     }
@@ -377,12 +393,12 @@ fn fans(f: &mut Frame, b: Rectangle, a: &App) {
         big: opt(top_rpm, |r| r.to_string()),
         sub: if fans.is_empty() { "Your firmware doesn't expose fan sensors".into() } else { "RPM".into() },
         details: if fans.is_empty() { vec![("Fans", "none exposed".into())] } else { fans.iter().take(5).map(|f| ("Fan", format!("{} {}", f.label, opt(f.rpm, |r| format!("{r} rpm"))))).collect() },
+        body_values: false,
         burst: None,
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
     let speed = top_rpm.map(|r| (r as f32 / 5000.0).min(1.0));
-    let art_box = Rectangle::new(art_r.position(), Size::new(art_r.width, art_r.height * if fans.is_empty() { 0.7 } else { 1.0 }));
-    art::fan::draw(f, art_box, if fans.is_empty() { None } else { speed }, a.anim());
+    art::fan::draw(f, art_r, if fans.is_empty() { None } else { speed }, a.anim());
     if fans.is_empty() {
         let bub = Rectangle::new(Point::new(charts.x, charts.y + 44.0), Size::new(charts.width.min(420.0), 130.0));
         ink::bubble(f, bub, art_r.center(), "Firmware keeps these locked. Nothing to read or control here.", 20.0);
@@ -417,7 +433,7 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
     for (page, r) in overview_cells(b) {
         ink::panel(f, r, PAPER);
         let inner = ink::inset(r, 14.0);
-        let art_r = Rectangle::new(Point::new(inner.x, inner.y + 22.0), Size::new(inner.width * 0.5, inner.height - 26.0));
+        let art_r = Rectangle::new(Point::new(inner.x, inner.y + 18.0), Size::new(inner.width * 0.5, inner.height - 18.0));
         let num_r = Rectangle::new(Point::new(inner.x + inner.width * 0.52, inner.y + 18.0), Size::new(inner.width * 0.48, inner.height - 18.0));
         let (title, big, sub, series, max, color): (&str, String, String, Option<&ember_core::series::Series>, f32, Color) = match page {
             Page::Cpu => {
@@ -436,7 +452,7 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
             Page::Gpu => {
                 let g = s.gpus.iter().find(|g| g.driver.is_some()).or(s.gpus.first());
                 let speed = g.and_then(|g| Some(g.cur_mhz? as f32 / g.max_mhz? as f32)).unwrap_or(0.0);
-                art::gpu::draw(f, art_r, g.is_some_and(|g| g.driver.is_some()), speed, pose);
+                art::gpu::draw(f, art_r, g.is_some_and(|g| g.driver.is_some()), speed, g.and_then(|g| g.usage).is_some_and(|u| u > 85.0), pose);
                 let off = s.gpus.iter().filter(|g| g.driver.is_none()).count();
                 let big = g.and_then(|g| g.cur_mhz).map_or_else(|| "OFF".into(), |m| m.to_string());
                 let sub = if off > 0 { format!("MHz · {off} card asleep") } else { "MHz".into() };
@@ -463,14 +479,21 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                     _ => 3,
                 };
                 art::net::draw(f, art_r, lvl, rx > 1e3, tx > 1e3, pose);
-                ("NETWORK", opt(s.net_rx, bytes), format!("down/s · up {}", rate(s.net_tx)), Some(&a.hist.rx), rate_max(&a.hist.rx, &a.hist.tx), CYAN)
+                {
+                    // number big, unit in the subtitle so narrow cards don't overflow
+                    let full = opt(s.net_rx, bytes);
+                    let (num, unit) = full.split_once(' ').map_or((full.clone(), String::new()), |(n, u)| (n.to_string(), u.to_string()));
+                    ("NETWORK", num, format!("{unit}/s down · up {}", rate(s.net_tx)), Some(&a.hist.rx), rate_max(&a.hist.rx, &a.hist.tx), CYAN)
+                }
             }
         };
-        let big_size = (num_r.height * 0.3).clamp(48.0, 84.0);
-        ink::misprint(f, &big, Point::new(num_r.x, num_r.y + 8.0), big_size, WHITE, Alignment::Left, pose / 4);
-        ink::text(f, sub, Point::new(num_r.x, num_r.y + 16.0 + big_size), 13.0, BODY, INK, Alignment::Left, Vertical::Top);
+        let big_size = fit_size(&big, num_r.width, (num_r.height * 0.26).clamp(48.0, 84.0));
+        ink::misprint(f, &big, Point::new(num_r.x, num_r.y + 6.0), big_size, WHITE, Alignment::Left, pose / 4);
+        let sub_y = num_r.y + 14.0 + big_size * 1.05;
+        ink::text(f, sub, Point::new(num_r.x, sub_y), 13.0, BODY, INK, Alignment::Left, Vertical::Top);
         if let Some(series) = series {
-            let ch = Rectangle::new(Point::new(num_r.x, num_r.y + num_r.height * 0.58), Size::new(num_r.width, num_r.height * 0.4));
+            let top = sub_y + 26.0;
+            let ch = Rectangle::new(Point::new(num_r.x, top), Size::new(num_r.width - 6.0, (num_r.y + num_r.height - top - 6.0).max(30.0)));
             chart::area(f, ch, series, max, color);
         }
         ink::caption(f, Point::new(r.x - 8.0, r.y - 16.0), title, 22.0, if page == Page::Temps && s.cpu_temp().is_some_and(|c| c > 80.0) { RED } else { YELLOW });
