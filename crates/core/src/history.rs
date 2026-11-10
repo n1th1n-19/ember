@@ -8,7 +8,8 @@
 //! holds twice that.
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Snapshot;
@@ -85,12 +86,19 @@ pub fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-pub fn default_path() -> PathBuf {
+/// Per-user history path. None when there is no per-user state dir: we never fall
+/// back to a shared location like /tmp (another user could plant a symlink there).
+pub fn default_path() -> Option<PathBuf> {
     let state = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    state.join("ember/history.bin")
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
+    Some(state.join("ember/history.bin"))
+}
+
+/// Open without following a symlink at the final path component.
+fn open_nofollow(path: &Path, opts: &mut OpenOptions) -> io::Result<File> {
+    opts.custom_flags(libc::O_NOFOLLOW).open(path)
 }
 
 pub struct Writer {
@@ -103,14 +111,21 @@ impl Writer {
     /// Open (or create) the history file; a file with a wrong header is replaced.
     pub fn open(path: PathBuf) -> io::Result<Self> {
         if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
+            // private to the user (0700); refuse a symlinked state dir
+            fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+            if fs::symlink_metadata(dir)?.file_type().is_symlink() {
+                return Err(io::Error::other("history dir is a symlink"));
+            }
         }
-        let valid = fs::read(&path).ok().is_some_and(|b| b.starts_with(MAGIC));
+        let valid = {
+            let mut head = [0u8; 4];
+            open_nofollow(&path, OpenOptions::new().read(true)).and_then(|mut f| f.read_exact(&mut head)).is_ok() && &head == MAGIC
+        };
         if !valid {
-            fs::write(&path, MAGIC)?;
+            open_nofollow(&path, OpenOptions::new().write(true).create(true).truncate(true).mode(0o600))?.write_all(MAGIC)?;
         }
-        let len = fs::metadata(&path)?.len() as usize;
-        let file = OpenOptions::new().append(true).open(&path)?;
+        let file = open_nofollow(&path, OpenOptions::new().append(true))?;
+        let len = file.metadata()?.len() as usize;
         Ok(Self { path, file, count: len.saturating_sub(MAGIC.len()) / RECORD })
     }
 
@@ -130,17 +145,19 @@ impl Writer {
         let mut out = Vec::with_capacity(MAGIC.len() + recs.len() * RECORD);
         out.extend_from_slice(MAGIC);
         recs.iter().for_each(|r| out.extend_from_slice(&r.encode()));
-        fs::write(&tmp, out)?;
+        // stale tmp from a crash: remove (unlink never follows symlinks), then create exclusively
+        let _ = fs::remove_file(&tmp);
+        open_nofollow(&tmp, OpenOptions::new().write(true).create_new(true).mode(0o600))?.write_all(&out)?;
         fs::rename(&tmp, &self.path)?;
-        self.file = OpenOptions::new().append(true).open(&self.path)?;
+        self.file = open_nofollow(&self.path, OpenOptions::new().append(true))?;
         self.count = recs.len();
         Ok(())
     }
 }
 
 /// Newest `n` records, oldest first. Ignores a trailing partial record.
-pub fn read_last(path: &std::path::Path, n: usize) -> io::Result<Vec<Record>> {
-    let mut f = File::open(path)?;
+pub fn read_last(path: &Path, n: usize) -> io::Result<Vec<Record>> {
+    let mut f = open_nofollow(path, OpenOptions::new().read(true))?;
     let mut head = [0u8; 4];
     f.read_exact(&mut head)?;
     if &head != MAGIC {
@@ -179,6 +196,13 @@ mod tests {
         assert_eq!(read_last(&path, 2).unwrap().len(), 2);
         // reopening keeps the count
         assert_eq!(Writer::open(path.clone()).unwrap().count, KEEP + 5);
+        // a symlink planted at the file path is refused, not followed
+        let target = path.with_file_name("victim");
+        fs::write(&target, b"keep").unwrap();
+        fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert!(Writer::open(path.clone()).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"keep");
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

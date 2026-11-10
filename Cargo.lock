@@ -1388,6 +1388,7 @@ dependencies = [
 name = "ember-core"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "sysinfo",
 ]
 

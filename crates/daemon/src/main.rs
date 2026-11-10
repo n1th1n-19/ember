@@ -56,12 +56,15 @@ fn main() {
         notify(Metric::Cpu, 95.0);
         return;
     }
-    let path = history::default_path();
-    let mut writer = match Writer::open(path.clone()) {
-        Ok(w) => Some(w),
-        Err(e) => {
-            // keep alerting even if history can't be written
-            eprintln!("emberd: history disabled ({}): {e}", path.display());
+    // keep alerting even if history can't be written
+    let mut writer = match history::default_path().map(|p| (Writer::open(p.clone()), p)) {
+        Some((Ok(w), _)) => Some(w),
+        Some((Err(e), p)) => {
+            eprintln!("emberd: history disabled ({}): {e}", p.display());
+            None
+        }
+        None => {
+            eprintln!("emberd: history disabled: no XDG_STATE_HOME or HOME");
             None
         }
     };

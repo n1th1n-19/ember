@@ -77,7 +77,7 @@ impl History {
     fn from_file() -> Self {
         use ember_core::history::{read_last, default_path, Field, KEEP};
         let mut h = Self::new(KEEP);
-        for r in read_last(&default_path(), KEEP).unwrap_or_default() {
+        for r in default_path().and_then(|p| read_last(&p, KEEP).ok()).unwrap_or_default() {
             h.cpu.push(r.get(Field::Cpu));
             h.mem.push(r.get(Field::Mem));
             h.swap.push(r.get(Field::Swap));
