@@ -18,7 +18,8 @@ use ember_core::control::CtlResult;
 use std::sync::Arc;
 use crate::ink::{self, CYAN, MAGENTA, RED, YELLOW};
 
-use crate::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page};
+use crate::glyphs::Glyph;
+use crate::widgets::{glyph_icon, banner, body, caption, card, comic_button, heading, muted, page};
 
 /// Parts of the Quick panel; each panel applet shows one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,8 +59,11 @@ pub enum Msg {
     // network
     Wifi(bool),
     Airplane(bool),
-    Join(String, bool, bool),
-    Copy(String),
+    /// Connect button on a network row: (ssid, known, secure, wpa3)
+    Join(String, bool, bool, bool),
+    Password(String),
+    SubmitPassword,
+    CancelJoin,
     // power
     Profile(Profile),
     Display(f32),
@@ -94,6 +98,9 @@ pub struct Quick {
     power: Option<PowerState>,
     month: Option<(i32, u32)>,
     confirm: Option<SessionAction>,
+    /// network waiting for a password: (ssid, wpa3), and what's typed so far
+    joining: Option<(String, bool)>,
+    password: String,
     busy: bool,
     status: Option<(String, bool)>,
 }
@@ -193,6 +200,15 @@ impl Quick {
         cosmic_bool(COMP, "autotile").unwrap_or(false)
     }
 
+    fn connect_new(&mut self, ssid: String, password: Option<String>, wpa3: bool) -> Task<Msg> {
+        let Some(dev) = self.net.as_ref().and_then(|n| n.wifi_device.clone()) else {
+            self.status = Some(("No Wi-Fi adapter found.".into(), true));
+            return Task::none();
+        };
+        self.busy = true;
+        act(format!("Connecting to {ssid}"), async move { network::connect_new(&dev, &ssid, password.as_deref(), wpa3).await })
+    }
+
     fn default_dev(&self, k: Kind) -> Option<&Device> {
         let list = if k == Kind::Output { &self.outputs } else { &self.inputs };
         list.iter().find(|d| d.default).or(list.first())
@@ -255,18 +271,29 @@ impl Quick {
             }
             Msg::Wifi(on) => return act_blocking(format!("Wi-Fi {}", if on { "on" } else { "off" }), move || network::set_wifi(on)),
             Msg::Airplane(on) => return act_blocking(format!("Airplane mode {}", if on { "on" } else { "off" }), move || network::set_airplane(on)),
-            Msg::Join(ssid, known, secure) => {
-                if !known && secure {
-                    self.status = Some((format!("\"{ssid}\" needs a password. Copy the command and run it in a terminal; it will ask for it."), false));
+            Msg::Join(ssid, known, secure, wpa3) => {
+                if known {
+                    self.busy = true;
+                    return act_blocking(format!("Connected to {ssid}"), move || network::connect_known(&ssid));
+                }
+                if secure {
+                    // ask for the password inline
+                    self.joining = Some((ssid, wpa3));
+                    self.password.clear();
                     return Task::none();
                 }
-                self.busy = true;
-                let what = format!("Joined {ssid}");
-                return act_blocking(what, move || if known { network::connect_known(&ssid) } else { network::connect_open(&ssid) });
+                return self.connect_new(ssid, None, false);
             }
-            Msg::Copy(cmd) => {
-                self.status = Some(("Command copied.".into(), false));
-                return cosmic::iced::clipboard::write(cmd);
+            Msg::Password(p) => self.password = p,
+            Msg::SubmitPassword => {
+                if let Some((ssid, wpa3)) = self.joining.take() {
+                    let pw = std::mem::take(&mut self.password);
+                    return self.connect_new(ssid, Some(pw), wpa3);
+                }
+            }
+            Msg::CancelJoin => {
+                self.joining = None;
+                self.password.clear();
             }
             Msg::Profile(p) => return act(format!("Power profile: {}", p.name()), async move { power::set_profile(p).await }),
             Msg::Display(v) => self.bright.display = Some(v),
@@ -365,30 +392,51 @@ impl Quick {
         card(column::with_capacity(4).spacing(10).push(big).push(date).push(nav).push(grid))
     }
 
+    /// "Label ........ value [button]" header line, then a full-width slider under it.
+    fn slider_block<'a>(glyph: Glyph, label: &str, v: f32, max: f32, on: impl Fn(f32) -> Msg + 'a, done: Msg, button: Option<Element<'a, Msg>>) -> Element<'a, Msg> {
+        let mut head = row::with_capacity(4)
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(glyph_icon(glyph, 22.0))
+            .push(widget::container(body(label.to_string())).width(Length::Fill))
+            .push(widget::text(format!("{:.0}%", v * 100.0)).font(crate::ink::DISPLAY).size(22).class(cosmic::theme::Text::Color(crate::ink::pal().text)));
+        if let Some(b) = button {
+            head = head.push(b);
+        }
+        column::with_capacity(2)
+            .spacing(6)
+            .push(head)
+            .push(widget::slider(0.0..=max, v, on).step(0.01).on_release(done).width(Length::Fill).height(28.0))
+            .into()
+    }
+
+    /// Icon, two lines of text, and a button on the right: used for device and network lists.
+    fn item<'a>(glyph: Glyph, title: String, sub: String, button: Option<Element<'a, Msg>>) -> Element<'a, Msg> {
+        let mut text = column::with_capacity(2).spacing(2).push(body(title));
+        if !sub.is_empty() {
+            text = text.push(muted(sub));
+        }
+        let mut r = row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(glyph_icon(glyph, 22.0)).push(widget::container(text).width(Length::Fill).clip(true));
+        if let Some(b) = button {
+            r = r.push(b);
+        }
+        r.into()
+    }
+
     fn sound(&self) -> Element<'_, Msg> {
-        let mut col = column::with_capacity(8).spacing(10).push(heading("Sound"));
+        let mut col = column::with_capacity(8).spacing(14).push(heading("Sound"));
         for (k, label, live) in [(Kind::Output, "Volume", self.out_vol), (Kind::Input, "Microphone", self.in_vol)] {
             let Some(d) = self.default_dev(k) else {
                 col = col.push(muted(format!("No {} device.", label.to_lowercase())));
                 continue;
             };
             let v = live.unwrap_or(d.volume);
-            let icon = match (k, d.muted) {
-                (Kind::Output, true) => "audio-volume-muted-symbolic",
-                (Kind::Output, false) => "audio-volume-high-symbolic",
-                (Kind::Input, true) => "microphone-disabled-symbolic",
-                (Kind::Input, false) => "audio-input-microphone-symbolic",
+            let glyph = match k {
+                Kind::Output => Glyph::Speaker { level: if v <= 0.001 { 0 } else { (v * 3.0).ceil().min(3.0) as u8 }, muted: d.muted },
+                Kind::Input => Glyph::Mic { muted: d.muted },
             };
-            col = col.push(
-                row::with_capacity(5)
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(app_icon(Some(icon), 20))
-                    .push(widget::container(body(label)).width(Length::Fixed(90.0)))
-                    .push(widget::slider(0.0..=1.5, v, move |x| Msg::Volume(k, x)).step(0.01).on_release(Msg::ApplyVolume(k)).width(Length::Fill))
-                    .push(widget::container(body(format!("{:.0}", v * 100.0))).width(Length::Fixed(40.0)))
-                    .push(comic_button(if d.muted { "Unmute" } else { "Mute" }, Some(Msg::Mute(k, !d.muted)), MAGENTA, d.muted)),
-            );
+            let mute = comic_button(if d.muted { "Unmute" } else { "Mute" }, Some(Msg::Mute(k, !d.muted)), MAGENTA, d.muted);
+            col = col.push(Self::slider_block(glyph, label, v, 1.5, move |x| Msg::Volume(k, x), Msg::ApplyVolume(k), Some(mute)));
             let list = if k == Kind::Output { &self.outputs } else { &self.inputs };
             if list.len() > 1 {
                 let mut r = row::with_capacity(list.len()).spacing(8);
@@ -402,35 +450,21 @@ impl Quick {
     }
 
     fn bluetooth(&self) -> Element<'_, Msg> {
-        let mut col = column::with_capacity(8).spacing(10);
+        let mut col = column::with_capacity(8).spacing(12);
         let Some(bt) = &self.bt else { return card(col.push(heading("Bluetooth")).push(muted("Reading Bluetooth…"))) };
         if bt.adapter.is_none() {
             return card(col.push(heading("Bluetooth")).push(muted("No Bluetooth adapter.")));
         }
-        col = col.push(
-            row::with_capacity(3)
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(widget::container(heading("Bluetooth")).width(Length::Fill))
-                .push(comic_button("On", (!bt.powered).then_some(Msg::BtPower(true)), YELLOW, bt.powered))
-                .push(comic_button("Off", bt.powered.then_some(Msg::BtPower(false)), YELLOW, !bt.powered)),
-        );
+        col = col.push(Self::pair("Bluetooth", "On", "Off", bt.powered, Msg::BtPower));
         if bt.powered {
             for d in &bt.devices {
-                let status = match (d.connected, d.battery) {
-                    (true, Some(b)) => format!("Connected · {b}%"),
+                let sub = match (d.connected, d.battery) {
+                    (true, Some(b)) => format!("Connected · battery {b}%"),
                     (true, None) => "Connected".into(),
-                    (false, _) => String::new(),
+                    (false, _) => "Paired".into(),
                 };
-                col = col.push(
-                    row::with_capacity(4)
-                        .spacing(10)
-                        .align_y(Alignment::Center)
-                        .push(app_icon(Some(&format!("{}-symbolic", d.icon.as_deref().unwrap_or("bluetooth"))), 20))
-                        .push(widget::container(body(d.name.clone())).width(Length::Fill))
-                        .push(muted(status))
-                        .push(comic_button(if d.connected { "Disconnect" } else { "Connect" }, (!self.busy).then(|| Msg::BtConnect(d.path.clone(), !d.connected)), CYAN, d.connected)),
-                );
+                let btn = comic_button(if d.connected { "Disconnect" } else { "Connect" }, (!self.busy).then(|| Msg::BtConnect(d.path.clone(), !d.connected)), CYAN, d.connected);
+                col = col.push(Self::item(Glyph::Bluetooth { on: true, connected: d.connected }, d.name.clone(), sub, Some(btn)));
             }
             if bt.devices.is_empty() {
                 col = col.push(muted("No paired devices. Pair new ones in COSMIC Settings > Bluetooth."));
@@ -440,86 +474,83 @@ impl Quick {
     }
 
     fn network(&self) -> Element<'_, Msg> {
-        let mut col = column::with_capacity(10).spacing(10).push(heading("Network"));
+        let mut col = column::with_capacity(12).spacing(12).push(heading("Network"));
         let Some(n) = &self.net else { return card(col.push(muted("Reading network…"))) };
         for l in &n.links {
-            let icon = if l.kind == "wifi" { "network-wireless-symbolic" } else { "network-wired-symbolic" };
-            let detail = [l.ipv4.clone().map(|ip| format!("IPv4 {ip}")), l.speed.map(|s| format!("{s} Mbps"))].into_iter().flatten().collect::<Vec<_>>().join("  ·  ");
-            col = col.push(
-                row::with_capacity(3)
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(app_icon(Some(icon), 20))
-                    .push(column::with_capacity(2).push(body(format!("{} · connected", l.connection))).push(muted(detail))),
-            );
+            let glyph = if l.kind == "wifi" { Glyph::Wifi { bars: 3 } } else { Glyph::Wired };
+            let detail = [l.ipv4.clone(), l.speed.map(|s| format!("{s} Mbps"))].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+            col = col.push(Self::item(glyph, format!("{} · connected", l.connection), detail, None));
         }
         if n.links.is_empty() {
-            col = col.push(muted("Not connected."));
+            col = col.push(Self::item(Glyph::Offline, "Not connected".into(), String::new(), None));
         }
-        let toggle = |label: &str, on: bool, m: fn(bool) -> Msg| {
-            row::with_capacity(3)
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(widget::container(body(label.to_string())).width(Length::Fill))
-                .push(comic_button("On", (!on).then(|| m(true)), YELLOW, on))
-                .push(comic_button("Off", on.then(|| m(false)), YELLOW, !on))
-        };
-        col = col.push(toggle("Airplane mode", n.airplane, Msg::Airplane)).push(toggle("Wi-Fi", n.wifi_enabled, Msg::Wifi));
+        col = col.push(Self::pair("Airplane mode", "On", "Off", n.airplane, Msg::Airplane)).push(Self::pair("Wi-Fi", "On", "Off", n.wifi_enabled, Msg::Wifi));
         if n.wifi_enabled && !n.airplane {
             for w in n.networks.iter().take(8) {
                 let bars = match w.signal {
-                    s if s >= 75 => "network-wireless-signal-excellent-symbolic",
-                    s if s >= 50 => "network-wireless-signal-good-symbolic",
-                    s if s >= 25 => "network-wireless-signal-ok-symbolic",
-                    _ => "network-wireless-signal-weak-symbolic",
+                    s if s >= 70 => 3,
+                    s if s >= 45 => 2,
+                    s if s >= 20 => 1,
+                    _ => 0,
                 };
-                let mut r = row::with_capacity(5)
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(app_icon(Some(bars), 18))
-                    .push(widget::container(body(w.ssid.clone())).width(Length::Fill))
-                    .push(muted(format!("{}%{}", w.signal, if w.secure { " · locked" } else { "" })));
-                if w.in_use {
-                    r = r.push(muted("connected"));
-                } else if !w.known && w.secure {
-                    r = r.push(comic_button("Copy join command", Some(Msg::Copy(network::join_command(&w.ssid))), YELLOW, false));
-                } else {
-                    r = r.push(comic_button("Join", (!self.busy).then(|| Msg::Join(w.ssid.clone(), w.known, w.secure)), CYAN, false));
+                let sub = format!("{}% · {}", w.signal, if w.known { "saved" } else if w.secure { "secured" } else { "open" });
+                let btn = if w.in_use { None } else { Some(comic_button("Connect", (!self.busy).then(|| Msg::Join(w.ssid.clone(), w.known, w.secure, w.wpa3)), CYAN, false)) };
+                let title = if w.in_use { format!("{} · connected", w.ssid) } else { w.ssid.clone() };
+                col = col.push(Self::item(Glyph::Wifi { bars }, title, sub, btn));
+                if let Some((ssid, _)) = &self.joining
+                    && *ssid == w.ssid
+                {
+                    let ok = self.password.len() >= 8;
+                    col = col.push(
+                        column::with_capacity(2)
+                            .spacing(8)
+                            .padding([0, 0, 0, 34])
+                            .push(
+                                widget::text_input::secure_input("Wi-Fi password", &self.password, None, true)
+                                    .on_input(Msg::Password)
+                                    .on_submit(|_| Msg::SubmitPassword)
+                                    .width(Length::Fill),
+                            )
+                            .push(
+                                row::with_capacity(2)
+                                    .spacing(10)
+                                    .push(comic_button("Connect", ok.then_some(Msg::SubmitPassword), YELLOW, true))
+                                    .push(comic_button("Cancel", Some(Msg::CancelJoin), CYAN, false)),
+                            ),
+                    );
                 }
-                col = col.push(r);
             }
         }
         card(col)
     }
 
     fn power(&self) -> Element<'_, Msg> {
-        let mut col = column::with_capacity(7).spacing(10).push(heading("Power & battery"));
+        let mut col = column::with_capacity(7).spacing(14).push(heading("Power & battery"));
         if let Some(b) = &self.battery {
+            let charging = b.status.as_deref() == Some("Charging");
             let pct = b.percent.map_or("--".into(), |p| format!("{p:.0}%"));
             let extra = [b.status.clone(), b.health.map(|h| format!("health {:.0}%", h * 100.0))].into_iter().flatten().collect::<Vec<_>>().join(" · ");
-            col = col.push(row::with_capacity(2).spacing(12).align_y(Alignment::Center).push(widget::text(pct).font(crate::ink::DISPLAY).size(40).class(cosmic::theme::Text::Color(crate::ink::pal().text))).push(muted(extra)));
+            col = col.push(
+                row::with_capacity(3)
+                    .spacing(14)
+                    .align_y(Alignment::Center)
+                    .push(glyph_icon(Glyph::Battery { frac: b.percent.map(|p| p / 100.0), charging }, 30.0))
+                    .push(widget::text(pct).font(crate::ink::DISPLAY).size(40).class(cosmic::theme::Text::Color(crate::ink::pal().text)))
+                    .push(muted(extra)),
+            );
         }
         if let Some(p) = &self.power {
             let mut r = row::with_capacity(3).spacing(10);
             for pr in Profile::ALL {
                 r = r.push(comic_button(pr.name(), (p.profile != Some(pr)).then_some(Msg::Profile(pr)), YELLOW, p.profile == Some(pr)));
             }
-            col = col.push(r);
+            col = col.push(r.wrap());
         }
-        let slider = |icon: &'static str, label: &'static str, v: f32, on: fn(f32) -> Msg, done: Msg| {
-            row::with_capacity(4)
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(app_icon(Some(icon), 20))
-                .push(widget::container(body(label)).width(Length::Fixed(90.0)))
-                .push(widget::slider(0.0..=1.0, v, on).step(0.01).on_release(done).width(Length::Fill))
-                .push(widget::container(body(format!("{:.0}%", v * 100.0))).width(Length::Fixed(48.0)))
-        };
         if let Some(v) = self.bright.display {
-            col = col.push(slider("display-brightness-symbolic", "Screen", v, Msg::Display, Msg::ApplyDisplay));
+            col = col.push(Self::slider_block(Glyph::Bulb, "Screen", v, 1.0, Msg::Display, Msg::ApplyDisplay, None));
         }
         if let Some(v) = self.bright.keyboard {
-            col = col.push(slider("keyboard-brightness-symbolic", "Keyboard", v, Msg::Keyboard, Msg::ApplyKeyboard));
+            col = col.push(Self::slider_block(Glyph::Keyboard, "Keyboard light", v, 1.0, Msg::Keyboard, Msg::ApplyKeyboard, None));
         }
         card(col)
     }

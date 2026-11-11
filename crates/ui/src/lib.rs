@@ -7,3 +7,4 @@ pub mod mini;
 pub mod config;
 pub mod widgets;
 pub mod quick;
+pub mod glyphs;

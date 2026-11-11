@@ -12,6 +12,7 @@ use cosmic::widget::{self, row};
 use cosmic::Element;
 use ember_core::calendar::{self, MONTHS};
 use ember_ui::ink;
+use ember_ui::glyphs::{Glyph, Icon};
 use ember_ui::quick::{self, Quick, Section};
 
 pub trait Kind: 'static {
@@ -59,59 +60,36 @@ fn lift(t: cosmic::iced::Task<quick::Msg>) -> Task<Message> {
 }
 
 impl<K: Kind> Applet<K> {
-    /// Theme icon for the panel button, reflecting current state.
-    fn icon(&self) -> &'static str {
+    /// Drawn panel glyph reflecting current state (None for the clock: text only).
+    fn glyph(&self) -> Option<Glyph> {
         let q = &self.quick;
-        match K::SECTION {
+        Some(match K::SECTION {
             Section::Sound => match q.output() {
-                Some(d) if d.muted || d.volume <= 0.001 => "audio-volume-muted-symbolic",
-                Some(d) if d.volume < 0.34 => "audio-volume-low-symbolic",
-                Some(d) if d.volume < 0.67 => "audio-volume-medium-symbolic",
-                Some(_) => "audio-volume-high-symbolic",
-                None => "audio-volume-muted-symbolic",
+                Some(d) => Glyph::Speaker { level: if d.volume <= 0.001 { 0 } else { (d.volume * 3.0).ceil().min(3.0) as u8 }, muted: d.muted },
+                None => Glyph::Speaker { level: 0, muted: true },
             },
             Section::Bluetooth => match q.bt() {
-                Some(b) if !b.powered || b.adapter.is_none() => "bluetooth-disabled-symbolic",
-                Some(b) if b.devices.iter().any(|d| d.connected) => "bluetooth-active-symbolic",
-                _ => "bluetooth-symbolic",
+                Some(b) => Glyph::Bluetooth { on: b.powered && b.adapter.is_some(), connected: b.devices.iter().any(|d| d.connected) },
+                None => Glyph::Bluetooth { on: true, connected: false },
             },
             Section::Network => match q.net() {
-                Some(n) if n.airplane => "airplane-mode-symbolic",
-                Some(n) if n.links.iter().any(|l| l.kind == "ethernet") => "network-wired-symbolic",
-                Some(n) if n.links.iter().any(|l| l.kind == "wifi") => "network-wireless-signal-excellent-symbolic",
-                Some(_) => "network-offline-symbolic",
-                None => "network-wired-symbolic",
+                Some(n) if n.airplane => Glyph::Airplane,
+                Some(n) if n.links.iter().any(|l| l.kind == "ethernet") => Glyph::Wired,
+                Some(n) if n.links.iter().any(|l| l.kind == "wifi") => Glyph::Wifi { bars: n.networks.iter().find(|w| w.in_use).map_or(3, |w| (w.signal / 25).min(3)) },
+                Some(_) => Glyph::Offline,
+                None => Glyph::Wired,
             },
             Section::Power => {
                 let b = q.battery();
-                let charging = b.and_then(|b| b.status.as_deref()).is_some_and(|s| s == "Charging");
-                match (b.and_then(|b| b.percent), charging) {
-                    (None, _) => "battery-missing-symbolic",
-                    (Some(p), true) if p >= 95.0 => "battery-full-charging-symbolic",
-                    (Some(_), true) => "battery-good-charging-symbolic",
-                    (Some(p), false) if p < 10.0 => "battery-empty-symbolic",
-                    (Some(p), false) if p < 30.0 => "battery-low-symbolic",
-                    (Some(p), false) if p < 70.0 => "battery-good-symbolic",
-                    _ => "battery-full-symbolic",
-                }
+                Glyph::Battery { frac: b.and_then(|b| b.percent).map(|p| p / 100.0), charging: b.and_then(|b| b.status.as_deref()) == Some("Charging") }
             }
-            Section::Dnd => {
-                if Quick::dnd() { "notifications-disabled-symbolic" } else { "preferences-system-notifications-symbolic" }
-            }
-            Section::Tiling => {
-                if Quick::tiled() { "view-grid-symbolic" } else { "focus-windows-symbolic" }
-            }
-            Section::Session => "system-shutdown-symbolic",
-            Section::Media => match q.player() {
-                Some(p) if p.playing => "media-playback-start-symbolic",
-                Some(_) => "media-playback-pause-symbolic",
-                None => "audio-x-generic-symbolic",
-            },
-            Section::Awake => {
-                if q.awake() { "view-reveal-symbolic" } else { "view-conceal-symbolic" }
-            }
-            Section::Clock => "",
-        }
+            Section::Dnd => Glyph::Bell { dnd: Quick::dnd() },
+            Section::Tiling => Glyph::Tiles { tiled: Quick::tiled() },
+            Section::Session => Glyph::Power,
+            Section::Media => Glyph::Note { playing: q.player().is_some_and(|p| p.playing) },
+            Section::Awake => Glyph::Cup { on: q.awake() },
+            Section::Clock => return None,
+        })
     }
 
     /// Short Bangers text shown next to the icon (clock, battery %, track title).
@@ -158,12 +136,11 @@ fn popup<K: Kind>(offset: cosmic::iced::Vector, bounds: Rectangle) -> Message {
             let mut s = state.core.applet.get_popup_settings(state.core.main_window_id().unwrap(), id, None, None, None);
             s.positioner.anchor_rect = Rectangle { x: (bounds.x - offset.x) as i32, y: (bounds.y - offset.y) as i32, width: bounds.width as i32, height: bounds.height as i32 };
             // Quick panel cards need more room than the stock 360px popups
-            s.positioner.size_limits = cosmic::iced::Limits::NONE.min_width(380.0).max_width(560.0).min_height(1.0).max_height(1000.0);
+            s.positioner.size_limits = cosmic::iced::Limits::NONE.min_width(POPUP_W).max_width(POPUP_W).min_height(1.0).max_height(1000.0);
             s
         },
         Some(Box::new(|state: &Applet<K>| {
-            let content = widget::container(state.quick.section(K::SECTION).map(Message::Quick)).padding(10).width(Length::Fixed(520.0));
-            Element::from(state.core.applet.popup_container(content)).map(cosmic::Action::App)
+            Element::from(popup_box(state.quick.section(K::SECTION).map(Message::Quick))).map(cosmic::Action::App)
         })),
     ))
 }
@@ -224,12 +201,13 @@ impl<K: Kind> cosmic::Application for Applet<K> {
     fn view(&self) -> Element<'_, Message> {
         let applet = &self.core.applet;
         let have_popup = self.popup;
+        let icon = f32::from(applet.suggested_size(true).0);
         let mut content = row::with_capacity(2).spacing(6).align_y(Alignment::Center);
-        if K::SECTION != Section::Clock {
-            content = content.push(widget::icon::from_name(self.icon()).size(applet.suggested_size(true).0).symbolic(true).icon());
+        if let Some(g) = self.glyph() {
+            content = content.push(widget::canvas(Icon { glyph: g, color: None }).width(Length::Fixed(icon * g.aspect())).height(Length::Fixed(icon)));
         }
         if let Some(t) = self.label() {
-            content = content.push(widget::text(t).font(if K::SECTION == Section::Clock { ink::BODY } else { ink::DISPLAY }).size(14));
+            content = content.push(widget::text(t).font(ink::DISPLAY).size(icon.max(14.0)));
         }
         let (px, py) = applet.suggested_padding(true);
         let mut btn = widget::button::custom(content).class(cosmic::theme::Button::AppletIcon).padding([py, px]);
@@ -242,7 +220,8 @@ impl<K: Kind> cosmic::Application for Applet<K> {
                 None => popup::<K>(offset, bounds),
             })
         };
-        applet.applet_tooltip::<Message>(btn, self.tooltip(), self.popup.is_some(), Message::Surface, None).into()
+        // autosize: the panel gives the applet exactly the room its content needs
+        applet.autosize_window(applet.applet_tooltip::<Message>(btn, self.tooltip(), self.popup.is_some(), Message::Surface, None)).into()
     }
 
     fn view_window(&self, _id: Id) -> Element<'_, Message> {
@@ -253,6 +232,22 @@ impl<K: Kind> cosmic::Application for Applet<K> {
         Some(cosmic::applet::style())
     }
 }
+
+/// Popup frame in Ember's look. libcosmic's `popup_container` is capped at 360 px,
+/// which crushed the cards; this one is 440 px and grows with its content's height.
+fn popup_box<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
+    let framed = widget::container(content).padding(14).width(Length::Fixed(POPUP_W)).class(cosmic::theme::Container::custom(|_| widget::container::Style {
+        text_color: Some(ink::pal().text),
+        background: Some(cosmic::iced::Background::Color(ink::pal().page)),
+        border: cosmic::iced::Border { color: ink::INK, width: 3.0, radius: 0.0.into() },
+        ..Default::default()
+    }));
+    cosmic::widget::autosize::autosize(framed, cosmic::widget::Id::new("cosmic-applet-autosize"))
+        .limits(cosmic::iced::Limits::NONE.min_width(POPUP_W).max_width(POPUP_W).min_height(1.0).max_height(1000.0))
+        .into()
+}
+
+const POPUP_W: f32 = 440.0;
 
 pub fn run<K: Kind>() -> cosmic::iced::Result {
     cosmic::applet::run::<Applet<K>>(())

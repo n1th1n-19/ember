@@ -175,6 +175,8 @@ pub struct App {
     apps: apps_page::Apps,
     settings: settings::Settings,
     quick: ember_ui::quick::Quick,
+    /// `--preview <applet>`: show one panel applet's popup content (layout check)
+    preview: Option<ember_ui::quick::Section>,
 }
 
 impl App {
@@ -261,8 +263,13 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: ember_ui::quick::Quick::default() };
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: ember_ui::quick::Quick::default(), preview: None };
         app.open(start);
+        app.preview = preview_arg();
+        if let Some(s) = app.preview {
+            app.quick = ember_ui::quick::Quick::only(&[s]);
+            app.page = Page::Quick;
+        }
         let first = app.page_opened();
         (app, first)
     }
@@ -337,6 +344,10 @@ impl cosmic::Application for App {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        if let Some(s) = self.preview {
+            let body = cosmic::widget::container(self.quick.section(s).map(Message::Quick)).padding(14).width(cosmic::iced::Length::Fixed(440.0));
+            return cosmic::widget::container(cosmic::widget::scrollable(body)).padding(20).width(cosmic::iced::Length::Fill).height(cosmic::iced::Length::Fill).class(cosmic::theme::Container::custom(|_| cosmic::widget::container::Style { background: Some(cosmic::iced::Background::Color(ember_ui::ink::pal().page)), ..Default::default() })).into();
+        }
         match self.page {
             Page::Processes => return self.ctl.view_processes(),
             Page::Services => return self.ctl.view_services(),
@@ -348,6 +359,25 @@ impl cosmic::Application for App {
         }
         canvas(pages::View { app: self, page: self.page }).width(Length::Fill).height(Length::Fill).into()
     }
+}
+
+fn preview_arg() -> Option<ember_ui::quick::Section> {
+    use ember_ui::quick::Section::*;
+    let args: Vec<String> = std::env::args().collect();
+    let name = args.iter().position(|a| a == "--preview").and_then(|i| args.get(i + 1))?;
+    Some(match name.as_str() {
+        "clock" => Clock,
+        "sound" => Sound,
+        "bluetooth" => Bluetooth,
+        "network" => Network,
+        "power" => Power,
+        "dnd" => Dnd,
+        "tiling" => Tiling,
+        "session" => Session,
+        "media" => Media,
+        "awake" => Awake,
+        _ => return None,
+    })
 }
 
 /// Lift Quick panel tasks (shared with the applets) into app tasks.

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Ember
+GenericName=System Monitor
+Comment=Comic-style system monitor and control center for COSMIC
+Type=Application
+Exec=ember
+Icon=io.github.n1th1n_19.Ember
+Terminal=false
+StartupNotify=true
+Categories=System;Monitor;COSMIC;
+Keywords=Monitor;System;Process;CPU;Memory;GPU;Network;Battery;Apps;Uninstall;
+StartupWMClass=io.github.n1th1n_19.Ember

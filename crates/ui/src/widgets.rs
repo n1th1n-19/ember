@@ -171,3 +171,8 @@ pub fn app_icon<'a, M: Clone + 'static>(icon: Option<&str>, size: u16) -> Elemen
     };
     i.size(size).into()
 }
+
+/// One of Ember's drawn glyphs as a widget, `h` px tall (theme foreground color).
+pub fn glyph_icon<'a, M: Clone + 'static>(g: crate::glyphs::Glyph, h: f32) -> Element<'a, M> {
+    widget::canvas(crate::glyphs::Icon { glyph: g, color: None }).width(cosmic::iced::Length::Fixed(h * g.aspect())).height(cosmic::iced::Length::Fixed(h)).into()
+}

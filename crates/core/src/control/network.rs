@@ -20,6 +20,8 @@ pub struct Wifi {
     pub signal: u8,
     pub secure: bool,
     pub in_use: bool,
+    /// WPA3-only network (needs SAE instead of a PSK)
+    pub wpa3: bool,
     /// a saved connection exists, so it can be joined with one click
     pub known: bool,
 }
@@ -30,6 +32,8 @@ pub struct NetState {
     pub wifi_enabled: bool,
     pub airplane: bool,
     pub networks: Vec<Wifi>,
+    /// Wi-Fi interface name (e.g. wlp8s0), if the machine has one
+    pub wifi_device: Option<String>,
 }
 
 /// Split one `nmcli -t` line on unescaped ':' and unescape `\:` / `\\`.
@@ -72,6 +76,7 @@ pub fn parse_wifi(out: &str, known: &[String]) -> Vec<Wifi> {
             ssid: ssid.clone(),
             signal: sig.parse().unwrap_or(0),
             secure: f.get(3).is_some_and(|s| !s.is_empty() && s != "--"),
+            wpa3: f.get(3).is_some_and(|s| s.contains("WPA3") && !s.contains("WPA2")),
             in_use: f.first().is_some_and(|s| s.trim() == "*"),
             known: known.contains(ssid),
         };
@@ -93,6 +98,9 @@ pub fn read() -> CtlResult<NetState> {
     for l in nmcli(&["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"])?.lines() {
         let f = fields(l);
         let (dev, kind, state, conn) = (f[0].clone(), f.get(1).cloned().unwrap_or_default(), f.get(2).cloned().unwrap_or_default(), f.get(3).cloned().unwrap_or_default());
+        if kind == "wifi" && st.wifi_device.is_none() {
+            st.wifi_device = Some(dev.clone());
+        }
         // real links only: skip loopback, bridges, VPN tunnels managed elsewhere
         if state == "connected" && (kind == "ethernet" || kind == "wifi") {
             let ipv4 = nmcli(&["-g", "IP4.ADDRESS", "dev", "show", &dev]).ok().and_then(|s| s.lines().next().map(|a| a.split('/').next().unwrap_or(a).to_string())).filter(|s| !s.is_empty());
@@ -123,14 +131,39 @@ pub fn connect_known(ssid: &str) -> CtlResult {
     nmcli(&["con", "up", "id", ssid]).map(drop)
 }
 
-/// Join a new open network; secured ones need a password (use `join_command`).
-pub fn connect_open(ssid: &str) -> CtlResult {
-    nmcli(&["dev", "wifi", "connect", ssid]).map(drop)
+/// Join a network that has no saved profile. The password travels to NetworkManager over
+/// D-Bus (never on a command line, where other users could read it in `ps`). NM saves the
+/// profile, so next time it's a one-click known network.
+pub async fn connect_new(device: &str, ssid: &str, password: Option<&str>, wpa3: bool) -> CtlResult {
+    use std::collections::HashMap;
+    use zbus::ObjectPath;
+    use zbus::Variant as Value;
+    let err = |e: zbus::Error| match e {
+        zbus::Error::MethodError(n, m, _) => m.unwrap_or_else(|| n.to_string()),
+        e => e.to_string(),
+    };
+    if password.is_some_and(|p| p.len() < 8 || p.len() > 63) {
+        return Err("Wi-Fi passwords are 8 to 63 characters.".into());
+    }
+    let conn = zbus::Connection::system().await.map_err(err)?;
+    let nm = zbus::Proxy::new(&conn, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager").await.map_err(err)?;
+    let dev: zbus::OwnedObjectPath = nm.call("GetDeviceByIpIface", &(device,)).await.map_err(err)?;
+
+    let mut settings: HashMap<&str, HashMap<&str, Value>> = HashMap::new();
+    settings.insert("connection", HashMap::from([("id", Value::from(ssid)), ("type", Value::from("802-11-wireless"))]));
+    settings.insert("802-11-wireless", HashMap::from([("ssid", Value::from(ssid.as_bytes().to_vec())), ("mode", Value::from("infrastructure"))]));
+    if let Some(pw) = password {
+        let mgmt = if wpa3 { "sae" } else { "wpa-psk" };
+        settings.insert("802-11-wireless-security", HashMap::from([("key-mgmt", Value::from(mgmt)), ("psk", Value::from(pw))]));
+    }
+    let root = ObjectPath::try_from("/").map_err(|e| e.to_string())?;
+    let _: (zbus::OwnedObjectPath, zbus::OwnedObjectPath) = nm.call("AddAndActivateConnection", &(settings, &dev, root)).await.map_err(err)?;
+    Ok(())
 }
 
-/// Terminal command that asks for the password without putting it in argv.
-pub fn join_command(ssid: &str) -> String {
-    format!("nmcli --ask dev wifi connect '{}'", ssid.replace('\'', r"'\''"))
+/// Forget a saved network (used when a password turned out wrong).
+pub fn forget(ssid: &str) -> CtlResult {
+    nmcli(&["con", "delete", "id", ssid]).map(drop)
 }
 
 #[cfg(test)]
@@ -144,6 +177,5 @@ mod tests {
         let out = " :JioFiber-4G:62:WPA2\n*:Home:80:WPA2\n :JioFiber-4G:27:WPA2\n ::15:WPA2\n :Cafe:40:\n";
         let w = parse_wifi(out, &["JioFiber-4G".to_string()]);
         assert_eq!(w.iter().map(|n| (n.ssid.as_str(), n.signal, n.in_use, n.known, n.secure)).collect::<Vec<_>>(), [("Home", 80, true, false, true), ("JioFiber-4G", 62, false, true, true), ("Cafe", 40, false, false, false)]);
-        assert_eq!(join_command("it's"), r"nmcli --ask dev wifi connect 'it'\''s'");
     }
 }
