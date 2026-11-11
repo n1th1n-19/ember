@@ -172,7 +172,9 @@ mod tests {
         let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         renice(child.id(), 10).unwrap();
         assert_eq!(nice_of(child.id()), Some(10));
-        signal(child.id(), Signal::Term).unwrap();
+        // KILL, not TERM: a child inherits "ignore SIGTERM" from whatever launched the
+        // tests, which made this flaky
+        signal(child.id(), Signal::Kill).unwrap();
         assert!(!child.wait().unwrap().success());
     }
 }

@@ -327,11 +327,11 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
         ground: YELLOW,
         label: "Battery",
         big: opt(bat.and_then(|b| b.percent), |p| format!("{p:.0}%")),
-        sub: bat.map_or_else(|| "No battery found".into(), |b| b.status.clone().unwrap_or_else(|| "--".into())),
+        sub: bat.map_or_else(|| "No battery found".into(), |b| b.status_line()),
         details: vec![
             ("Health", opt(bat.and_then(|b| b.health), |h| format!("{:.0}%", h * 100.0))),
             ("Cycles", opt(bat.and_then(|b| b.cycles), |c| c.to_string())),
-            ("Power", opt(bat.and_then(|b| b.power_w), |w| format!("{w:.1} W"))),
+            ("Power", if bat.is_some_and(|b| b.held()) { "0 W · on charger".into() } else { opt(bat.and_then(|b| b.power_w), |w| format!("{w:.1} W")) }),
             ("Cell", bat.map_or("--".into(), |b| b.name.clone())),
         ],
         body_values: false,
@@ -351,7 +351,13 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
         &opt(bat.and_then(|b| b.health), |h| format!("{:.0}%", h * 100.0)),
     );
     let w = bat.and_then(|b| b.power_w).unwrap_or(0.0);
-    chart::gauge(f, Point::new(top.x + r * 2.0 + 40.0 + r * 1.2, top.y + top.height * 0.85), r * 1.2, w / 60.0, &format!("{w:.0} W"));
+    chart::gauge(
+        f,
+        Point::new(top.x + r * 2.0 + 40.0 + r * 1.2, top.y + top.height * 0.85),
+        r * 1.2,
+        w / 60.0,
+        &if bat.is_some_and(|b| b.held()) { "ON AC".into() } else { format!("{w:.1} W") },
+    );
     let lr = chart_label(f, bot, &format!("Charge · {}", a.range_label()));
     chart::area(f, lr, &a.hist().battery, 100.0, YELLOW);
 }

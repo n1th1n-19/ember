@@ -153,19 +153,54 @@ impl cosmic::Application for Applet {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let horizontal = self.core.applet.is_horizontal();
-        let (w, h) = self.core.applet.suggested_size(false);
-        let minor = f32::from(w.min(h));
-        // one meter per reading, about half the icon size each along the panel
+        let applet = &self.core.applet;
+        let horizontal = applet.is_horizontal();
         let keys = self.cfg.applet();
-        let along = minor * (0.55 * keys.len().max(1) as f32).max(0.6);
-        let (cw, ch) = if horizontal { (along, minor) } else { (minor, along) };
-        let tile = widget::canvas(Tile { snap: &self.snap, keys: keys.clone(), horizontal }).width(Length::Fixed(cw)).height(Length::Fixed(ch));
+        let icon = f32::from(applet.suggested_size(true).0);
+        // horizontal panel: a slim bar, short name and number for each reading ("▮ CPU 12%"), readable
+        // even on an XS panel; vertical panel: stacked bars only (no room for text)
+        let tile: Element<'_, Message> = if horizontal {
+            let (bar_w, label_px, value_px) = ((icon * 0.45).max(7.0), (icon * 0.7).max(10.0), icon.max(13.0));
+            let vals: Vec<_> = keys.iter().map(|k| mini::read(&self.snap, *k).value).collect();
+            // rough width (Bangers ≈ 0.45 em/char, Space Grotesk ≈ 0.6) to see whether
+            // names fit in the room the panel offers; if not, show bars and numbers only
+            let est = |labels: bool| -> f32 {
+                keys.iter()
+                    .zip(&vals)
+                    .map(|(k, v)| {
+                        bar_w
+                            + 12.0
+                            + v.chars().count().max(3) as f32 * value_px * 0.45
+                            + if labels { k.short().len() as f32 * label_px * 0.6 + 4.0 } else { 0.0 }
+                    })
+                    .sum()
+            };
+            let room = applet.suggested_bounds.as_ref().map(|b| b.width).filter(|w| *w > 0.0);
+            let labels = room.is_none_or(|w| est(true) <= w);
+            let mut r = row::with_capacity(keys.len() * 3).spacing(4).align_y(Alignment::Center);
+            for (i, k) in keys.iter().enumerate() {
+                r = r.push(widget::canvas(Tile { snap: &self.snap, keys: vec![*k], horizontal }).width(Length::Fixed(bar_w)).height(Length::Fixed(icon)));
+                if labels {
+                    r = r.push(widget::text(k.short()).font(ink::BODY).size(label_px));
+                }
+                r = r.push(widget::text(vals[i].clone()).font(ink::DISPLAY).size(value_px));
+                if i + 1 < keys.len() {
+                    r = r.push(widget::Space::new().width(Length::Fixed(4.0)));
+                }
+            }
+            r.into()
+        } else {
+            let along = icon * (0.55 * keys.len().max(1) as f32).max(0.6);
+            widget::canvas(Tile { snap: &self.snap, keys: keys.clone(), horizontal }).width(Length::Fixed(icon)).height(Length::Fixed(along)).into()
+        };
 
         let have_popup = self.popup;
         let btn = cosmic::widget::button::custom(tile)
             .class(cosmic::theme::Button::AppletIcon)
-            .padding(self.core.applet.suggested_padding(false).0)
+            .padding({
+                let (px, py) = applet.suggested_padding(true);
+                [py, px]
+            })
             .on_press_with_rectangle(move |offset, bounds| {
                 if let Some(id) = have_popup {
                     return Message::Surface(destroy_popup(id));
@@ -196,7 +231,8 @@ impl cosmic::Application for Applet {
             })
             .collect::<Vec<_>>()
             .join("  ·  ");
-        self.core.applet.applet_tooltip::<Message>(btn, summary, self.popup.is_some(), Message::Surface, None).into()
+        // autosize: the panel gives the applet exactly the room its content needs
+        applet.autosize_window(applet.applet_tooltip::<Message>(btn, summary, self.popup.is_some(), Message::Surface, None)).into()
     }
 
     fn view_window(&self, _id: Id) -> Element<'_, Message> {

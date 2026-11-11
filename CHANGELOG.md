@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Battery: when the charger is plugged in but the firmware holds the charge (Long Life mode
+  or a charge limit), the page says so and shows "0 W · on charger" instead of a bare 0 W.
+- Session: the restart/shut down confirmation puts its message on its own line, so the
+  "Yes" and "Cancel" buttons are no longer squeezed into a thin red strip in the applet.
+- Readings applet: shows each reading's number (and name, when the panel has room) next
+  to its bar; on a small panel it used to show only unreadable slivers.
+
 ## 0.1.2 — 2026-11-12
 
 - NVIDIA cards are read through NVIDIA's own driver library (NVML): usage, clock, temperature,

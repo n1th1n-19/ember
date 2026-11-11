@@ -692,13 +692,13 @@ impl Quick {
         }
         let mut col = column::with_capacity(3).spacing(10).push(heading("Session")).push(r.wrap());
         if let Some(a) = self.confirm {
-            col = col.push(
-                row::with_capacity(3)
+            // message on its own line: in a narrow applet popup a single row squeezed the buttons to nothing
+            col = col.push(body(format!("{}? Unsaved work in other apps may be lost.", a.name()))).push(
+                row::with_capacity(2)
                     .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(body(format!("{}? Unsaved work in other apps may be lost.", a.name())))
                     .push(comic_button(&format!("Yes, {}", a.name().to_lowercase()), Some(Msg::Confirm(a)), RED, true))
-                    .push(comic_button("Cancel", Some(Msg::Cancel), CYAN, false)),
+                    .push(comic_button("Cancel", Some(Msg::Cancel), CYAN, false))
+                    .wrap(),
             );
         }
         card(col)

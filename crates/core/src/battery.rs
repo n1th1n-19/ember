@@ -11,6 +11,8 @@ pub struct Battery {
     /// Watts, positive = draw/charge rate as reported
     pub power_w: Option<f32>,
     pub cycles: Option<u32>,
+    /// firmware charge mode, e.g. "Long Life" (holds the battery near 80% on the charger)
+    pub charge_type: Option<String>,
 }
 
 /// Parse a power_supply `uevent` file. Returns None if it isn't a battery.
@@ -34,7 +36,27 @@ pub fn parse_uevent(text: &str) -> Option<Battery> {
         health,
         power_w: power_uw.map(|uw| (uw / 1e6).abs() as f32),
         cycles: num("CYCLE_COUNT").map(|v| v as u32),
+        charge_type: kv.get("CHARGE_TYPES").or(kv.get("CHARGE_TYPE")).map(|s| s.to_string()).filter(|s| s != "Unknown" && s != "N/A"),
     })
+}
+
+impl Battery {
+    /// On the charger but neither charging nor draining: the firmware is holding the
+    /// charge (charge limit / Long Life mode), so no power flows and 0 W is correct.
+    pub fn held(&self) -> bool {
+        matches!(self.status.as_deref(), Some("Not charging" | "Full"))
+    }
+
+    /// Human status line.
+    pub fn status_line(&self) -> String {
+        match (self.status.as_deref(), self.charge_type.as_deref()) {
+            (Some("Not charging"), Some(m)) => format!("Plugged in · held by {m} mode"),
+            (Some("Not charging"), None) => "Plugged in · held at charge limit".into(),
+            (Some("Full"), _) => "Plugged in · full".into(),
+            (Some(s), _) => s.into(),
+            (None, _) => "--".into(),
+        }
+    }
 }
 
 /// All batteries under /sys/class/power_supply (BAT0, BAT1, CMB0…).
@@ -61,6 +83,10 @@ mod tests {
         assert_eq!(b.cycles, Some(76));
         assert!((b.health.unwrap() - 0.9537).abs() < 1e-3);
         assert!((b.power_w.unwrap() - 8.5).abs() < 1e-3);
+        assert!(b.held());
+        assert_eq!(b.status_line(), "Plugged in · held at charge limit");
+        let ll = parse_uevent(&format!("{BAT1}POWER_SUPPLY_CHARGE_TYPES=Long Life\n")).unwrap();
+        assert_eq!(ll.status_line(), "Plugged in · held by Long Life mode");
     }
 
     #[test]
