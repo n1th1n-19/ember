@@ -1432,7 +1432,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "ember"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ember-core",
  "ember-ui",
@@ -1443,7 +1443,7 @@ dependencies = [
 
 [[package]]
 name = "ember-applet"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ember-core",
  "ember-ui",
@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "ember-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libc",
  "nvml-wrapper",
@@ -1464,14 +1464,14 @@ dependencies = [
 
 [[package]]
 name = "ember-helper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "ember-ui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ember-core",
  "libcosmic",
@@ -1481,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "ember-widget"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ember-core",
  "ember-ui",
@@ -1490,7 +1490,7 @@ dependencies = [
 
 [[package]]
 name = "emberd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ember-core",
  "notify-rust",

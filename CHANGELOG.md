@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-11-12
 
 - NVIDIA cards are read through NVIDIA's own driver library (NVML): usage, clock, temperature,
   power draw and video memory. Ember only asks while the card is awake, so it never wakes a
