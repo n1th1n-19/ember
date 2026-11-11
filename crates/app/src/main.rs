@@ -3,6 +3,7 @@
 mod apps_page;
 mod controls;
 mod pages;
+mod settings;
 mod widgets;
 
 use std::time::Duration;
@@ -29,10 +30,11 @@ pub enum Page {
     Services,
     Control,
     Apps,
+    Settings,
 }
 
 impl Page {
-    pub const ALL: [Page; 13] = [
+    pub const ALL: [Page; 14] = [
         Page::Overview,
         Page::Cpu,
         Page::Memory,
@@ -46,6 +48,7 @@ impl Page {
         Page::Services,
         Page::Control,
         Page::Apps,
+        Page::Settings,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -62,6 +65,7 @@ impl Page {
             Page::Services => "Services",
             Page::Control => "Control",
             Page::Apps => "Apps",
+            Page::Settings => "Settings",
         }
     }
 }
@@ -76,6 +80,7 @@ pub enum Message {
     ToggleRange,
     Ctl(controls::Msg),
     Apps(apps_page::Msg),
+    Settings(settings::Msg),
 }
 
 /// 60 one-second samples per chart.
@@ -161,10 +166,10 @@ pub struct App {
     pub long_range: bool,
     samples: u64,
     pub pose: u64,
-    pub motion: bool,
     pub bursts: Bursts,
     ctl: controls::Controls,
     apps: apps_page::Apps,
+    settings: settings::Settings,
 }
 
 impl App {
@@ -177,9 +182,13 @@ impl App {
         if self.long_range { "last hour" } else { "last 60 s" }
     }
 
+    pub fn motion(&self) -> bool {
+        self.settings.cfg.motion
+    }
+
     /// Pose counter for art, frozen when motion is off.
     pub fn anim(&self) -> u64 {
-        if self.motion { self.pose } else { 0 }
+        if self.motion() { self.pose } else { 0 }
     }
 
     fn page_opened(&mut self) -> Task<Message> {
@@ -244,7 +253,7 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, motion: true, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default() };
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load() };
         app.open(start);
         let first = app.page_opened();
         (app, first)
@@ -263,7 +272,7 @@ impl cosmic::Application for App {
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
-        let motion = if self.motion { "Motion: on" } else { "Motion: off" };
+        let motion = if self.motion() { "Motion: on" } else { "Motion: off" };
         let theme = if ember_ui::ink::pal().dark { "Theme: dark" } else { "Theme: light" };
         let range = if self.long_range { "Range: 1 h" } else { "Range: 60 s" };
         vec![
@@ -292,21 +301,22 @@ impl cosmic::Application for App {
             }
             Message::Ctl(m) => return self.ctl.update(m),
             Message::Apps(m) => return self.apps.update(m),
-            Message::ToggleMotion => self.motion = !self.motion,
+            Message::ToggleMotion => return self.settings.update(settings::Msg::Motion(!self.motion())),
+            Message::Settings(m) => return self.settings.update(m),
             Message::ToggleRange => {
                 self.long_range = !self.long_range;
                 if self.long_range {
                     self.hist_long = History::from_file();
                 }
             }
-            Message::ToggleTheme => ember_ui::ink::set_dark(!ember_ui::ink::pal().dark),
+            Message::ToggleTheme => return self.settings.update(settings::Msg::Dark(!ember_ui::ink::pal().dark)),
         }
         Task::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
         let sample = cosmic::iced::time::every(Duration::from_secs(1)).map(|_| Message::Sample);
-        if self.motion {
+        if self.motion() {
             let pose = cosmic::iced::time::every(Duration::from_millis(POSE_MS)).map(|_| Message::Pose);
             Subscription::batch([sample, pose])
         } else {
@@ -320,6 +330,7 @@ impl cosmic::Application for App {
             Page::Services => return self.ctl.view_services(),
             Page::Control => return self.ctl.view_control(&self.snap.fans),
             Page::Apps => return self.apps.view(),
+            Page::Settings => return self.settings.view(),
             _ => {}
         }
         canvas(pages::View { app: self, page: self.page }).width(Length::Fill).height(Length::Fill).into()
@@ -328,6 +339,7 @@ impl cosmic::Application for App {
 
 fn main() -> cosmic::iced::Result {
     ember_ui::ink::load_fonts();
+    ember_ui::ink::set_dark(ember_ui::config::EmberConfig::load().dark);
     // `ember --page cpu` opens straight to a page (used by the dock applet).
     let args: Vec<String> = std::env::args().collect();
     let start = args

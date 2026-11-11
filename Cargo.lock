@@ -1401,6 +1401,7 @@ version = "0.1.0"
 dependencies = [
  "ember-core",
  "ember-ui",
+ "libc",
  "libcosmic",
  "tokio",
 ]
@@ -1436,6 +1437,7 @@ version = "0.1.0"
 dependencies = [
  "ember-core",
  "libcosmic",
+ "serde",
 ]
 
 [[package]]

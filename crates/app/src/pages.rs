@@ -53,7 +53,7 @@ impl canvas::Program<Message, Theme, Renderer> for View<'_> {
             Page::Gpu => gpu(&mut f, b, a),
             Page::Fans => fans(&mut f, b, a),
             // widget pages are drawn by controls.rs
-            Page::Processes | Page::Services | Page::Control | Page::Apps => {}
+            Page::Processes | Page::Services | Page::Control | Page::Apps | Page::Settings => {}
         }
         vec![f.into_geometry()]
     }
@@ -152,7 +152,7 @@ fn chart_label(f: &mut Frame, r: Rectangle, s: &str) -> Rectangle {
 
 fn burst_age(a: &App, start: Option<u64>) -> Option<u64> {
     let age = a.pose.saturating_sub(start?);
-    (age <= BURST_POSES).then_some(if a.motion { age } else { 3 })
+    (age <= BURST_POSES).then_some(if a.motion() { age } else { 3 })
 }
 
 fn rate(v: Option<f64>) -> String {

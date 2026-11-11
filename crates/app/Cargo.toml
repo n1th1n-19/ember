@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 ember-core = { path = "../core" }
 ember-ui = { path = "../ui" }
+libc = "0.2.191"
 tokio = { version = "1.54.1", features = ["rt"] }
 
 [dependencies.libcosmic]

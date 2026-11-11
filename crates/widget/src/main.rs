@@ -3,13 +3,15 @@
 //! Bottom layer: above the wallpaper, below every window, no keyboard focus, no
 //! reserved space. Click it to open Ember.
 //!
-//! `ember-widget [--corner top-right|top-left|bottom-right|bottom-left] [--on-top]`
-//! `--on-top` floats it above windows instead of on the desktop.
+//! Placement, layer and readings come from Ember's settings (cosmic-config) and update
+//! live when they change.
 use std::time::Duration;
 
 use cosmic::app::{Core, Settings, Task};
 use cosmic::cctk::sctk::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
+use cosmic::cosmic_config::{config_subscription, CosmicConfigEntry};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{IcedMargin, IcedOutput, SctkLayerSurfaceSettings};
+use cosmic::iced::platform_specific::shell::commands::layer_surface::{set_anchor, set_layer, set_margin, set_size};
 use cosmic::iced::widget::canvas::{self, Frame, Geometry};
 use cosmic::iced::window::Id;
 use cosmic::iced::{mouse, Length, Limits, Point, Rectangle, Size, Subscription};
@@ -17,27 +19,33 @@ use cosmic::surface::action::app_layer_shell;
 use cosmic::{Element, Renderer, Theme};
 use ember_core::{Sampler, Snapshot};
 use ember_ui::ink;
+use ember_ui::config::{Corner, EmberConfig};
 use ember_ui::mini::{self, Key};
 
 const ID: &str = "io.github.n1th1n_19.Ember.Widget";
 const W: u32 = 340;
-const H: u32 = 380;
-// ponytail: fixed readings until the Settings page writes them to cosmic-config
-const KEYS: [Key; 7] = [Key::Cpu, Key::Ram, Key::Temp, Key::Gpu, Key::Battery, Key::Net, Key::Disk];
+
+/// Card height for `n` readings (46px rows + caption and border room).
+fn height(n: usize) -> u32 {
+    70 + 46 * n.max(1) as u32
+}
 
 #[derive(Debug, Clone)]
 enum Message {
     Tick,
     Open,
+    Config(EmberConfig),
 }
 
 struct Widget {
     core: Core,
     sampler: Sampler,
     snap: Snapshot,
+    cfg: EmberConfig,
+    surface: Option<Id>,
 }
 
-struct Card<'a>(&'a Snapshot);
+struct Card<'a>(&'a Snapshot, Vec<Key>);
 
 impl canvas::Program<Message, Theme, Renderer> for Card<'_> {
     type State = ();
@@ -55,23 +63,19 @@ impl canvas::Program<Message, Theme, Renderer> for Card<'_> {
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
         let mut f = Frame::new(renderer, bounds.size());
-        let readings: Vec<_> = KEYS.iter().map(|k| mini::read(self.0, *k)).collect();
+        let readings: Vec<_> = self.1.iter().map(|k| mini::read(self.0, *k)).collect();
         // leave room for the caption above and the hard shadow below-right
         mini::card(&mut f, Rectangle::new(Point::new(10.0, 20.0), bounds.size() - Size::new(20.0, 30.0)), "EMBER", &readings);
         vec![f.into_geometry()]
     }
 }
 
-fn corner() -> (Anchor, IcedMargin) {
-    let arg = std::env::args().skip_while(|a| a != "--corner").nth(1).unwrap_or_else(|| "top-right".into());
-    // clear of the top panel and screen edges
-    let (top, side) = (56, 28);
-    match arg.as_str() {
-        "top-left" => (Anchor::TOP | Anchor::LEFT, IcedMargin { top, left: side, ..Default::default() }),
-        "bottom-left" => (Anchor::BOTTOM | Anchor::LEFT, IcedMargin { bottom: side, left: side, ..Default::default() }),
-        "bottom-right" => (Anchor::BOTTOM | Anchor::RIGHT, IcedMargin { bottom: side, right: side, ..Default::default() }),
-        _ => (Anchor::TOP | Anchor::RIGHT, IcedMargin { top, right: side, ..Default::default() }),
-    }
+fn anchor(c: Corner) -> Anchor {
+    (if c.top() { Anchor::TOP } else { Anchor::BOTTOM }) | (if c.left() { Anchor::LEFT } else { Anchor::RIGHT })
+}
+
+fn layer(on_top: bool) -> Layer {
+    if on_top { Layer::Top } else { Layer::Bottom }
 }
 
 fn open_ember() {
@@ -99,36 +103,64 @@ impl cosmic::Application for Widget {
         let mut sampler = Sampler::new();
         std::thread::sleep(Duration::from_millis(200));
         let snap = sampler.sample();
-        let (anchor, margin) = corner();
-        let layer = if std::env::args().any(|a| a == "--on-top") { Layer::Top } else { Layer::Bottom };
+        let cfg = EmberConfig::load();
+        let (top, right, bottom, left) = cfg.widget_corner.margins(cfg.widget_x, cfg.widget_y);
+        let h = height(cfg.widget().len());
+        let (anchor, margin, layer) = (anchor(cfg.widget_corner), IcedMargin { top, right, bottom, left }, layer(cfg.widget_on_top));
         let surface = app_layer_shell::<Widget>(
             |_| Default::default(),
-            move |_| SctkLayerSurfaceSettings {
-                id: Id::unique(),
+            move |state: &mut Widget| {
+                let id = Id::unique();
+                state.surface = Some(id);
+                SctkLayerSurfaceSettings {
+                id,
                 layer,
                 keyboard_interactivity: KeyboardInteractivity::None,
                 anchor,
                 output: IcedOutput::Active,
                 namespace: "ember-widget".into(),
                 margin,
-                size: Some((Some(W), Some(H))),
+                size: Some((Some(W), Some(h))),
                 exclusive_zone: 0,
-                size_limits: Limits::NONE.min_width(1.0).min_height(1.0).max_width(W as f32).max_height(H as f32),
+                size_limits: Limits::NONE.min_width(1.0).min_height(1.0).max_width(W as f32).max_height(height(Key::ALL.len()) as f32),
                 ..Default::default()
+            }
             },
             Some(Box::new(|state: &Widget| Element::from(state.card()).map(cosmic::Action::App))),
         );
-        (Self { core, sampler, snap }, cosmic::task::message(cosmic::Action::Surface(surface)))
+        (Self { core, sampler, snap, cfg, surface: None }, cosmic::task::message(cosmic::Action::Surface(surface)))
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        cosmic::iced::time::every(Duration::from_secs(2)).map(|_| Message::Tick)
+        Subscription::batch([
+            cosmic::iced::time::every(Duration::from_secs(2)).map(|_| Message::Tick),
+            config_subscription::<_, EmberConfig>(0u8, ember_ui::config::ID.into(), EmberConfig::VERSION).map(|u| Message::Config(u.config)),
+        ])
     }
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
             Message::Tick => self.snap = self.sampler.sample(),
             Message::Open => open_ember(),
+            Message::Config(new) => {
+                let old = std::mem::replace(&mut self.cfg, new);
+                ink::set_dark(self.cfg.dark);
+                let Some(id) = self.surface else { return Task::none() };
+                let c = &self.cfg;
+                let mut tasks = vec![];
+                if (old.widget_corner, old.widget_x, old.widget_y) != (c.widget_corner, c.widget_x, c.widget_y) {
+                    let (t, r, b, l) = c.widget_corner.margins(c.widget_x, c.widget_y);
+                    tasks.push(set_anchor(id, anchor(c.widget_corner)));
+                    tasks.push(set_margin(id, t, r, b, l));
+                }
+                if old.widget_keys != c.widget_keys {
+                    tasks.push(set_size(id, Some(W), Some(height(c.widget().len()))));
+                }
+                if old.widget_on_top != c.widget_on_top {
+                    tasks.push(set_layer(id, layer(c.widget_on_top)));
+                }
+                return Task::batch(tasks);
+            }
         }
         Task::none()
     }
@@ -149,11 +181,12 @@ impl cosmic::Application for Widget {
 
 impl Widget {
     fn card(&self) -> Element<'_, Message> {
-        cosmic::widget::canvas(Card(&self.snap)).width(Length::Fill).height(Length::Fill).into()
+        cosmic::widget::canvas(Card(&self.snap, self.cfg.widget())).width(Length::Fill).height(Length::Fill).into()
     }
 }
 
 fn main() -> cosmic::iced::Result {
     ink::load_fonts();
+    ink::set_dark(EmberConfig::load().dark);
     cosmic::app::run::<Widget>(Settings::default().no_main_window(true).transparent(true).exit_on_close(false), ())
 }

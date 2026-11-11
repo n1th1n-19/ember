@@ -13,11 +13,11 @@ use cosmic::{Element, Renderer, Theme};
 use ember_core::control::power::{self, Profile};
 use ember_core::{Sampler, Snapshot};
 use ember_ui::ink;
+use cosmic::cosmic_config::{config_subscription, CosmicConfigEntry};
+use ember_ui::config::EmberConfig;
 use ember_ui::mini::{self, Key};
 
 const ID: &str = "io.github.n1th1n_19.Ember.Applet";
-// ponytail: fixed readings until the Settings page writes them to cosmic-config
-const TILE: [Key; 3] = [Key::Cpu, Key::Ram, Key::Temp];
 const POPUP: [Key; 7] = [Key::Cpu, Key::Ram, Key::Temp, Key::Gpu, Key::Battery, Key::Net, Key::Disk];
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,7 @@ enum Message {
     Profile(Option<Profile>),
     SetProfile(Profile),
     OpenEmber,
+    Config(EmberConfig),
 }
 
 struct Applet {
@@ -36,11 +37,13 @@ struct Applet {
     sampler: Sampler,
     snap: Snapshot,
     profile: Option<Profile>,
+    cfg: EmberConfig,
 }
 
 /// Canvas program for the tile in the dock.
 struct Tile<'a> {
     snap: &'a Snapshot,
+    keys: Vec<Key>,
     horizontal: bool,
 }
 
@@ -48,7 +51,7 @@ impl canvas::Program<Message, Theme, Renderer> for Tile<'_> {
     type State = ();
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
         let mut f = Frame::new(renderer, bounds.size());
-        let readings: Vec<_> = TILE.iter().map(|k| mini::read(self.snap, *k)).collect();
+        let readings: Vec<_> = self.keys.iter().map(|k| mini::read(self.snap, *k)).collect();
         mini::meters(&mut f, Rectangle::new(Point::new(1.0, 1.0), bounds.size() - cosmic::iced::Size::new(2.0, 2.0)), &readings, self.horizontal);
         vec![f.into_geometry()]
     }
@@ -100,7 +103,7 @@ impl cosmic::Application for Applet {
         let mut sampler = Sampler::new();
         std::thread::sleep(Duration::from_millis(200));
         let snap = sampler.sample();
-        (Self { core, popup: None, sampler, snap, profile: None }, load_profile())
+        (Self { core, popup: None, sampler, snap, profile: None, cfg: EmberConfig::load() }, load_profile())
     }
 
     fn on_close_requested(&self, id: Id) -> Option<Message> {
@@ -110,7 +113,10 @@ impl cosmic::Application for Applet {
     fn subscription(&self) -> Subscription<Message> {
         // faster while the popup is open
         let every = if self.popup.is_some() { 1 } else { 2 };
-        cosmic::iced::time::every(Duration::from_secs(every)).map(|_| Message::Tick)
+        Subscription::batch([
+            cosmic::iced::time::every(Duration::from_secs(every)).map(|_| Message::Tick),
+            config_subscription::<_, EmberConfig>(0u8, ember_ui::config::ID.into(), EmberConfig::VERSION).map(|u| Message::Config(u.config)),
+        ])
     }
 
     fn update(&mut self, msg: Message) -> Task<Message> {
@@ -123,6 +129,10 @@ impl cosmic::Application for Applet {
             }
             Message::Surface(a) => return cosmic::task::message(cosmic::Action::Surface(a)),
             Message::Profile(p) => self.profile = p,
+            Message::Config(c) => {
+                ink::set_dark(c.dark);
+                self.cfg = c;
+            }
             Message::SetProfile(p) => {
                 self.profile = Some(p);
                 return cosmic::task::future(async move {
@@ -146,9 +156,11 @@ impl cosmic::Application for Applet {
         let horizontal = self.core.applet.is_horizontal();
         let (w, h) = self.core.applet.suggested_size(false);
         let minor = f32::from(w.min(h));
-        // three meters side by side: about 1.6× the icon size along the panel
-        let (cw, ch) = if horizontal { (minor * 1.6, minor) } else { (minor, minor * 1.6) };
-        let tile = widget::canvas(Tile { snap: &self.snap, horizontal }).width(Length::Fixed(cw)).height(Length::Fixed(ch));
+        // one meter per reading, about half the icon size each along the panel
+        let keys = self.cfg.applet();
+        let along = minor * (0.55 * keys.len().max(1) as f32).max(0.6);
+        let (cw, ch) = if horizontal { (along, minor) } else { (minor, along) };
+        let tile = widget::canvas(Tile { snap: &self.snap, keys: keys.clone(), horizontal }).width(Length::Fixed(cw)).height(Length::Fixed(ch));
 
         let have_popup = self.popup;
         let btn = cosmic::widget::button::custom(tile)
@@ -171,7 +183,7 @@ impl cosmic::Application for Applet {
                 ))
             });
 
-        let summary = TILE.iter().map(|k| {
+        let summary = keys.iter().map(|k| {
             let r = mini::read(&self.snap, *k);
             format!("{} {}", k.short(), r.value)
         }).collect::<Vec<_>>().join("  ·  ");
@@ -205,5 +217,6 @@ impl Applet {
 
 fn main() -> cosmic::iced::Result {
     ink::load_fonts();
+    ink::set_dark(EmberConfig::load().dark);
     cosmic::applet::run::<Applet>(())
 }

@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 ember-core = { path = "../core" }
+serde = { version = "1.0.229", features = ["derive"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
