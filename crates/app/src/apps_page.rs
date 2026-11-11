@@ -9,7 +9,7 @@ use ember_core::apps::{self, App, Plan, Source};
 use ember_core::control::CtlResult;
 use ember_ui::ink::{bytes, CYAN, MAGENTA, RED, YELLOW};
 
-use crate::widgets::{banner, body, caption, card, comic_button, heading, muted, page, row_button};
+use crate::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 use crate::Message;
 
 #[derive(Debug, Clone)]
@@ -179,6 +179,7 @@ impl Apps {
 
         let header = row::with_capacity(5)
             .spacing(10)
+            .push(widget::Space::new().width(Length::Fixed(24.0)))
             .push(widget::container(heading("App")).width(Length::FillPortion(4)))
             .push(widget::container(heading("Source")).width(Length::FillPortion(1)))
             .push(widget::container(heading("Version")).width(Length::FillPortion(2)))
@@ -190,6 +191,8 @@ impl Apps {
             let name = if a.disabled { format!("{}  (hidden)", a.name) } else { a.name.clone() };
             let line = row::with_capacity(4)
                 .spacing(10)
+                .align_y(Alignment::Center)
+                .push(app_icon(a.icon.as_deref(), 24))
                 .push(widget::container(body(name)).width(Length::FillPortion(4)).clip(true))
                 .push(widget::container(body(a.source.name())).width(Length::FillPortion(1)))
                 .push(widget::container(muted(a.version.clone().unwrap_or_else(|| "--".into()))).width(Length::FillPortion(2)).clip(true))

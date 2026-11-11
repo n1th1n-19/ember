@@ -161,3 +161,14 @@ pub fn page<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message
         }))
         .into()
 }
+
+/// App/process icon from a launcher `Icon=` value (theme name or absolute path).
+/// Unknown programs get the generic executable icon so rows stay aligned.
+pub fn app_icon<'a>(icon: Option<&str>, size: u16) -> Element<'a, Message> {
+    let i = match icon {
+        Some(p) if p.starts_with('/') => widget::icon::from_path(p.into()).icon(),
+        Some(n) => widget::icon::from_name(n).size(size).icon(),
+        None => widget::icon::from_name("application-x-executable-symbolic").size(size).icon(),
+    };
+    i.size(size).into()
+}

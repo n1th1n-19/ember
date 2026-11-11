@@ -57,6 +57,8 @@ pub struct App {
     pub user: bool,
     /// launcher hidden (NoDisplay) or snap disabled
     pub disabled: bool,
+    /// icon theme name or absolute file path (launcher `Icon=`)
+    pub icon: Option<String>,
 }
 
 // ---------- desktop entries ----------
@@ -67,6 +69,8 @@ pub struct Desktop {
     pub exec: String,
     pub no_display: bool,
     pub app_type: String,
+    pub icon: String,
+    pub wm_class: String,
 }
 
 /// Minimal parser: keys of the `[Desktop Entry]` group only, unlocalized.
@@ -88,6 +92,8 @@ pub fn parse_desktop(text: &str) -> Desktop {
             "NoDisplay" => d.no_display = v.trim() == "true",
             "Hidden" => d.no_display |= v.trim() == "true",
             "Type" => d.app_type = v.trim().to_string(),
+            "Icon" => d.icon = v.trim().to_string(),
+            "StartupWMClass" => d.wm_class = v.trim().to_string(),
             _ => {}
         }
     }
@@ -142,6 +148,30 @@ fn read_launchers() -> Vec<(PathBuf, Desktop)> {
     out
 }
 
+/// Lowercase program name → launcher icon, for decorating process lists. Keys are the
+/// Exec binary's file name, StartupWMClass and the launcher file id.
+pub fn launcher_icons() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for (path, d) in read_launchers() {
+        if d.icon.is_empty() {
+            continue;
+        }
+        let exec = d.exec.split_whitespace().find(|t| !t.contains('=') && *t != "env").unwrap_or("").trim_matches('"');
+        let mut keys = vec![Path::new(exec).file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()];
+        keys.push(d.wm_class.to_lowercase());
+        if let Some(stem) = path.file_stem() {
+            let stem = stem.to_string_lossy().to_lowercase();
+            // "org.gnome.Nautilus" → also "nautilus"
+            keys.push(stem.rsplit('.').next().unwrap_or(&stem).to_string());
+            keys.push(stem);
+        }
+        for k in keys.into_iter().filter(|k| k.len() > 1 && k != "flatpak" && k != "snap" && k != "sh" && k != "bash") {
+            map.entry(k).or_insert_with(|| d.icon.clone());
+        }
+    }
+    map
+}
+
 // ---------- parsers for package-manager output ----------
 
 /// `dpkg -S path...` stdout: "pkg1, pkg2: /path" per line → path → first package.
@@ -187,6 +217,7 @@ pub fn parse_flatpak(out: &str) -> Vec<App> {
                 path: None,
                 user: c.get(3) == Some(&"user"),
                 disabled: false,
+                icon: None,
             })
         })
         .collect()
@@ -227,6 +258,7 @@ pub fn parse_snap(out: &str) -> Vec<App> {
                 path: None,
                 user: false,
                 disabled: notes.contains("disabled"),
+                icon: None,
             })
         })
         .collect()
@@ -265,7 +297,7 @@ pub fn parse_bun(out: &str) -> Vec<App> {
 }
 
 fn global(source: Source, name: &str, version: Option<String>) -> App {
-    App { name: name.to_string(), source, id: name.to_string(), version, size: None, desktop: None, path: None, user: true, disabled: false }
+    App { name: name.to_string(), source, id: name.to_string(), version, size: None, desktop: None, path: None, user: true, disabled: false, icon: Some("utilities-terminal".into()) }
 }
 
 /// ELF with the AppImage magic at offset 8 ("AI" + type 1 or 2).
@@ -306,21 +338,22 @@ pub fn list() -> Vec<App> {
         let file_id = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let ps = path.display().to_string();
         let exec_bin = d.exec.split_whitespace().next().unwrap_or("").trim_matches('"').to_string();
-        let mut app = App { name: d.name.clone(), source: Source::Manual, id: ps.clone(), version: None, size: None, desktop: Some(path.clone()), path: None, user: true, disabled: d.no_display };
+        let icon = (!d.icon.is_empty()).then(|| d.icon.clone());
+        let mut app = App { name: d.name.clone(), source: Source::Manual, id: ps.clone(), version: None, size: None, desktop: Some(path.clone()), path: None, user: true, disabled: d.no_display, icon: icon.clone() };
 
         if ps.contains("/flatpak/exports/") {
             let Some(f) = flatpaks.get(&file_id).or_else(|| flatpaks.values().find(|f| file_id.starts_with(&f.id))) else { continue };
             if !flat_seen.insert(f.id.clone()) {
                 continue;
             }
-            app = App { desktop: Some(path.clone()), disabled: d.no_display, name: d.name.clone(), ..f.clone() };
+            app = App { desktop: Some(path.clone()), disabled: d.no_display, name: d.name.clone(), icon, ..f.clone() };
         } else if ps.starts_with("/var/lib/snapd/") {
             let name = file_id.split('_').next().unwrap_or(&file_id).to_string();
             let Some(s) = snaps.get(&name) else { continue };
             if !snap_seen.insert(name) {
                 continue;
             }
-            app = App { desktop: Some(path.clone()), name: d.name.clone(), ..s.clone() };
+            app = App { desktop: Some(path.clone()), name: d.name.clone(), icon, ..s.clone() };
         } else if let Some(pkg) = owners.get(&ps) {
             // one row per package even if it ships several launchers
             if !apt_seen.insert(pkg.clone()) || d.no_display {
@@ -349,7 +382,7 @@ pub fn list() -> Vec<App> {
             for p in rd.flatten().map(|e| e.path()) {
                 if p.is_file() && !known.contains(&p) && file_is_appimage(&p) {
                     let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                    apps.push(App { name, source: Source::AppImage, id: p.display().to_string(), version: None, size: fs::metadata(&p).ok().map(|m| m.len()), desktop: None, path: Some(p), user: true, disabled: false });
+                    apps.push(App { name, source: Source::AppImage, id: p.display().to_string(), version: None, size: fs::metadata(&p).ok().map(|m| m.len()), desktop: None, path: Some(p), user: true, disabled: false, icon: None });
                 }
             }
         }
@@ -639,7 +672,7 @@ mod tests {
         assert_eq!(parse_apt_sim("NOTE: x\nRemv cowsay [3.03]\nRemv cowsay-off [3.03]\n"), ["cowsay", "cowsay-off"]);
         assert_eq!(quote("/a b/it's"), r"'/a b/it'\''s'");
         assert_eq!(quote("org.gimp.GIMP"), "org.gimp.GIMP");
-        let manual = App { name: "X".into(), source: Source::Manual, id: "x".into(), version: None, size: None, desktop: Some("/usr/share/applications/x.desktop".into()), path: None, user: false, disabled: false };
+        let manual = App { name: "X".into(), source: Source::Manual, id: "x".into(), version: None, size: None, desktop: Some("/usr/share/applications/x.desktop".into()), path: None, user: false, disabled: false, icon: None };
         assert!(!plan(&manual).button);
         assert!(uninstall(&manual).is_err());
     }

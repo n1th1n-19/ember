@@ -11,7 +11,7 @@ use ember_core::control::{cpu, CtlResult};
 use ember_core::fans::Fan;
 use ember_ui::ink::{bytes, CYAN, MAGENTA, RED, YELLOW};
 
-use crate::widgets::{banner, body, caption, card, comic_button, heading, muted, page, row_button};
+use crate::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 use crate::Message;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +51,8 @@ pub enum Msg {
 
 pub struct Controls {
     procs: Procs,
+    /// program name → launcher icon, loaded on first visit to Processes
+    icons: Option<std::collections::HashMap<String, String>>,
     rows: Vec<ProcRow>,
     proc_search: String,
     sort: Sort,
@@ -73,6 +75,7 @@ impl Default for Controls {
         let cpu = cpu::read_state();
         Self {
             procs: Procs::new(),
+            icons: None,
             rows: vec![],
             proc_search: String::new(),
             sort: Sort::Cpu,
@@ -122,6 +125,9 @@ impl Controls {
     pub fn tick(&mut self, page: crate::Page) -> Task<Message> {
         match page {
             crate::Page::Processes => {
+                if self.icons.is_none() {
+                    self.icons = Some(ember_core::apps::launcher_icons());
+                }
                 self.rows = self.procs.list();
                 Task::none()
             }
@@ -241,6 +247,7 @@ impl Controls {
 
         let header = row::with_capacity(8)
             .spacing(10)
+            .push(widget::Space::new().width(Length::Fixed(20.0)))
             .push(widget::container(heading("Name")).width(Length::FillPortion(4)))
             .push(widget::container(heading("PID")).width(Length::FillPortion(1)))
             .push(widget::container(heading("User")).width(Length::FillPortion(2)))
@@ -251,8 +258,11 @@ impl Controls {
         // ponytail: first 150 rows only; search narrows the rest
         for r in rows.iter().take(150) {
             let selected = self.selected_pid == Some(r.pid);
+            let icon = self.icons.as_ref().and_then(|m| m.get(&r.name.to_lowercase())).map(String::as_str);
             let line = row::with_capacity(8)
                 .spacing(10)
+                .align_y(Alignment::Center)
+                .push(app_icon(icon, 20))
                 .push(widget::container(body(r.name.clone())).width(Length::FillPortion(4)))
                 .push(widget::container(body(r.pid.to_string())).width(Length::FillPortion(1)))
                 .push(widget::container(body(r.user.clone())).width(Length::FillPortion(2)))
