@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.n1th1n_19.Ember</id>
+  <name>Ember</name>
+  <summary>Comic-style system monitor and control center for COSMIC</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <launchable type="desktop-id">io.github.n1th1n_19.Ember.desktop</launchable>
+  <url type="homepage">https://github.com/n1th1n-19/ember</url>
+  <url type="bugtracker">https://github.com/n1th1n-19/ember/issues</url>
+  <description>
+    <p>Ember shows what your machine is doing as hand-drawn comic panels with live charts,
+    and lets you control it: processes, services, power profiles, graphics mode, CPU scaling
+    and every installed app from APT, Flatpak, Snap, AppImage, cargo, npm and bun.</p>
+    <p>It also ships panel applets for the COSMIC desktop (clock, sound, Bluetooth, network,
+    power, tiling, session, media, keep awake, live readings) and a desktop widget.</p>
+  </description>
+  <screenshots>
+    <screenshot type="default"><image>https://raw.githubusercontent.com/n1th1n-19/ember/main/assets/screenshots/dark/overview.png</image></screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-11"/>
+  </releases>
+</component>

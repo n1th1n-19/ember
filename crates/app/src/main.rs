@@ -409,7 +409,40 @@ fn quick_task(t: cosmic::iced::Task<ember_ui::quick::Msg>) -> Task<Message> {
     t.map(|m| cosmic::Action::App(Message::Quick(m)))
 }
 
+/// Headless setup used by install.sh (same code paths as the Settings page):
+///   ember --setup-panel     readings + Ember applets in the top panel
+///   ember --restore-panel   COSMIC's own applets back, Ember's removed
+///   ember --widget-autostart on|off
+/// Returns Some(exit code) when a setup flag was handled.
+fn setup_flags(args: &[String]) -> Option<i32> {
+    let report = |what: &str, r: Result<(), String>| match r {
+        Ok(()) => {
+            println!("ember: {what}");
+            0
+        }
+        Err(e) => {
+            eprintln!("ember: {what} failed: {e}");
+            1
+        }
+    };
+    match args.get(1).map(String::as_str)? {
+        "--setup-panel" => Some(report("Ember applets added to the top panel", settings::set_in_panel(true).and(settings::set_ember_applets(true)))),
+        "--restore-panel" => Some(report("COSMIC's panel applets restored", settings::set_ember_applets(false).and(settings::set_in_panel(false)))),
+        "--widget-autostart" => {
+            let on = args.get(2).map(String::as_str) == Some("on");
+            if !on {
+                settings::stop_widget();
+            }
+            Some(report(if on { "widget will start at login" } else { "widget autostart removed" }, settings::set_autostart(on)))
+        }
+        _ => None,
+    }
+}
+
 fn main() -> cosmic::iced::Result {
+    if let Some(code) = setup_flags(&std::env::args().collect::<Vec<_>>()) {
+        std::process::exit(code);
+    }
     ember_ui::ink::load_fonts();
     ember_ui::ink::set_dark(ember_ui::config::EmberConfig::load().dark);
     // `ember --page cpu` opens straight to a page (used by the dock applet).

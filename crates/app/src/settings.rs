@@ -72,7 +72,7 @@ pub fn autostart_enabled() -> bool {
     autostart_file().exists()
 }
 
-fn set_autostart(on: bool) -> Result<(), String> {
+pub fn set_autostart(on: bool) -> Result<(), String> {
     let f = autostart_file();
     if !on {
         return match fs::remove_file(&f) {
@@ -119,7 +119,7 @@ fn start_widget() -> Result<(), String> {
         .map_err(|e| format!("couldn't start ember-widget: {e}"))
 }
 
-fn stop_widget() {
+pub fn stop_widget() {
     for pid in widget_pids() {
         // SAFETY: plain syscall on our own process
         unsafe { libc::kill(pid, libc::SIGTERM) };

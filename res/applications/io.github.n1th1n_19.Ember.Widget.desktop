@@ -7,3 +7,4 @@ Terminal=false
 Icon=io.github.n1th1n_19.Ember
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
+Categories=Utility;
