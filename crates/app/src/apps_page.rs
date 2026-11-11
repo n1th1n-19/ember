@@ -25,6 +25,8 @@ pub enum Msg {
     Toggle,
     DeleteData,
     Copy(String),
+    /// the "Copied!" state on the copy button ends (n = which copy, so a newer one isn't cut short)
+    CopyDone(u64),
     Done(String, CtlResult),
 }
 
@@ -40,6 +42,9 @@ pub struct Apps {
     plan: Option<(String, Plan)>,
     busy: bool,
     status: Option<(String, bool)>,
+    /// command shown as "Copied!" right now, with a counter to match its CopyDone
+    copied: Option<(String, u64)>,
+    copies: u64,
 }
 
 fn wrap(m: Msg) -> cosmic::Action<Message> {
@@ -129,8 +134,19 @@ impl Apps {
                 return blocking(move || apps::delete_data(&app), move |r| Msg::Done(what, r));
             }
             Msg::Copy(cmd) => {
-                self.status = Some(("Command copied. Paste it into a terminal.".into(), false));
-                return cosmic::iced::clipboard::write(cmd);
+                self.copies += 1;
+                let n = self.copies;
+                self.copied = Some((cmd.clone(), n));
+                let reset = cosmic::task::future(async move {
+                    let _ = tokio::task::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_secs(2))).await;
+                    wrap(Msg::CopyDone(n))
+                });
+                return Task::batch([cosmic::iced::clipboard::write(cmd), reset]);
+            }
+            Msg::CopyDone(n) => {
+                if self.copied.as_ref().is_some_and(|(_, m)| *m == n) {
+                    self.copied = None;
+                }
             }
             Msg::Done(what, r) => {
                 self.busy = false;
@@ -265,7 +281,10 @@ impl Apps {
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(widget::container(widget::text(p.command.clone()).font(cosmic::iced::Font::MONOSPACE).size(13)).padding([6, 10]).width(Length::Fill))
-                    .push(comic_button("Copy command", Some(Message::Apps(Msg::Copy(p.command.clone()))), YELLOW, false)),
+                    .push({
+                        let done = self.copied.as_ref().is_some_and(|(c, _)| *c == p.command);
+                        comic_button(if done { "Copied!" } else { "Copy command" }, Some(Message::Apps(Msg::Copy(p.command.clone()))), YELLOW, done)
+                    }),
             );
             if p.button {
                 confirm = confirm.push(comic_button(&format!("Yes, uninstall {}", a.name), on(Msg::Confirm), RED, true));
@@ -273,5 +292,22 @@ impl Apps {
             col = col.push(confirm);
         }
         widget::container(col).padding([6, 12, 14, 12]).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_button_shows_copied_then_resets() {
+        let mut a = Apps::default();
+        let _ = a.update(Msg::Copy("sudo apt remove x".into()));
+        assert_eq!(a.copied.as_ref().map(|c| c.0.as_str()), Some("sudo apt remove x"));
+        let _ = a.update(Msg::Copy("flatpak uninstall y".into()));
+        let _ = a.update(Msg::CopyDone(1)); // timer of the first copy: must not clear the second
+        assert_eq!(a.copied.as_ref().map(|c| c.0.as_str()), Some("flatpak uninstall y"));
+        let _ = a.update(Msg::CopyDone(2));
+        assert!(a.copied.is_none());
     }
 }

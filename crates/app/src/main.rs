@@ -456,7 +456,78 @@ fn setup_flags(args: &[String]) -> Option<i32> {
     }
 }
 
+const HELP: &str = "Ember: comic-style system monitor and control center for COSMIC
+
+Usage:
+  ember                         open Ember
+  ember --page <name>           open on a page (cpu, memory, apps, quick panel, ...)
+  ember update                  update every installed Ember part
+  ember uninstall               remove Ember completely
+  ember uninstall <parts...>    remove only some parts, e.g. ember uninstall widget sound
+  ember install <parts...>      add parts: app service widget applets, or applet names
+                                (readings clock sound bluetooth network power dnd tiling
+                                session media awake)
+  ember version                 show the version
+  ember help                    show this help
+
+update/install/uninstall accept --yes (no questions) and --dry-run (show what would happen).
+";
+
+/// `ember update|uninstall|install|version|help`. Returns an exit code when handled.
+/// The package work is done by ember-install (shipped in ember-common); without it
+/// (a developer build) the same script is fetched from GitHub.
+fn cli(args: &[String]) -> Option<i32> {
+    let cmd = args.get(1).map(String::as_str)?;
+    let rest = &args[2..];
+    let mut opts: Vec<String> = rest.iter().filter(|a| a.starts_with("--")).cloned().collect();
+    let parts: Vec<&str> = rest.iter().map(String::as_str).filter(|a| !a.starts_with("--")).collect();
+    match cmd {
+        "version" | "--version" | "-V" => {
+            println!("ember {}", env!("CARGO_PKG_VERSION"));
+            return Some(0);
+        }
+        "help" | "--help" | "-h" => {
+            print!("{HELP}");
+            return Some(0);
+        }
+        "update" => opts.insert(0, "--update".into()),
+        "uninstall" | "remove" => {
+            opts.insert(0, "--uninstall".into());
+            if !parts.is_empty() {
+                opts.extend(["--only".into(), parts.join(",")]);
+            }
+        }
+        "install" => {
+            if parts.is_empty() {
+                eprintln!("ember install: name the parts to add, e.g. ember install widget sound (see: ember help)");
+                return Some(2);
+            }
+            opts.extend(["--only".into(), parts.join(",")]);
+        }
+        _ => return None,
+    }
+    Some(run_installer(&opts))
+}
+
+fn run_installer(opts: &[String]) -> i32 {
+    use std::os::unix::process::CommandExt;
+    let installed = ["/usr/bin/ember-install".into(), ember_ui::setup::sibling_bin("ember-install")].into_iter().find(|p: &std::path::PathBuf| p.exists());
+    let err = match installed {
+        Some(script) => std::process::Command::new(script).args(opts).exec(),
+        None => {
+            eprintln!("ember: ember-install not found, using the installer from GitHub");
+            let url = "https://raw.githubusercontent.com/n1th1n-19/ember/main/install.sh";
+            std::process::Command::new("bash").arg("-c").arg(format!("curl -fsSL {url} | bash -s -- \"$@\"")).arg("ember").args(opts).exec()
+        }
+    };
+    eprintln!("ember: couldn't start the installer: {err}");
+    1
+}
+
 fn main() -> cosmic::iced::Result {
+    if let Some(code) = cli(&std::env::args().collect::<Vec<_>>()) {
+        std::process::exit(code);
+    }
     if let Some(code) = setup_flags(&std::env::args().collect::<Vec<_>>()) {
         std::process::exit(code);
     }

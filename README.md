@@ -86,7 +86,16 @@ un-hides launchers you hid with Ember, removes all Ember packages, your Ember se
 history and caches, then lists anything it couldn't remove (normally nothing). Remove just
 some parts with `--uninstall --only widget,sound`.
 
-Once installed, `ember-install` does all of this offline: `ember-install --only service`,
+Once installed, the `ember` command does it too:
+
+```sh
+ember update                    # update every installed part
+ember uninstall                 # remove everything
+ember uninstall widget sound    # remove only these parts
+ember install service clock     # add parts
+```
+
+Without the app (only applets or the widget), use `ember-install`, which every part ships: `ember-install --only service`,
 `ember-install --update`, `ember-install --uninstall`. Add `--dry-run` to see what would
 happen, or `--yes` to skip the questions.
 

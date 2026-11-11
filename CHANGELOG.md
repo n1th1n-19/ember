@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 — 2026-11-11
+
+- `ember update`, `ember uninstall [parts]`, `ember install <parts>`, `ember version`, `ember help`.
+- Installer: progress bars for downloads, install, update and uninstall; falls back to the saved
+  panel layout if restoring the panel fails; refreshes COSMIC's launcher after installing the app.
+- The window has a title ("Ember — CPU" …) instead of showing as "unknown" in the launcher.
+- Copy buttons switch to "Copied!" for two seconds.
+
 ## 0.1.0 — 2026-11-11
 
 First release.
