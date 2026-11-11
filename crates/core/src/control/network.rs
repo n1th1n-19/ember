@@ -97,21 +97,39 @@ pub fn read() -> CtlResult<NetState> {
     let mut st = NetState::default();
     for l in nmcli(&["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"])?.lines() {
         let f = fields(l);
-        let (dev, kind, state, conn) = (f[0].clone(), f.get(1).cloned().unwrap_or_default(), f.get(2).cloned().unwrap_or_default(), f.get(3).cloned().unwrap_or_default());
+        let (dev, kind, state, conn) =
+            (f[0].clone(), f.get(1).cloned().unwrap_or_default(), f.get(2).cloned().unwrap_or_default(), f.get(3).cloned().unwrap_or_default());
         if kind == "wifi" && st.wifi_device.is_none() {
             st.wifi_device = Some(dev.clone());
         }
         // real links only: skip loopback, bridges, VPN tunnels managed elsewhere
         if state == "connected" && (kind == "ethernet" || kind == "wifi") {
-            let ipv4 = nmcli(&["-g", "IP4.ADDRESS", "dev", "show", &dev]).ok().and_then(|s| s.lines().next().map(|a| a.split('/').next().unwrap_or(a).to_string())).filter(|s| !s.is_empty());
-            let speed = std::fs::read_to_string(format!("/sys/class/net/{dev}/speed")).ok().and_then(|s| s.trim().parse::<i64>().ok()).filter(|&s| s > 0).map(|s| s as u32);
+            let ipv4 = nmcli(&["-g", "IP4.ADDRESS", "dev", "show", &dev])
+                .ok()
+                .and_then(|s| s.lines().next().map(|a| a.split('/').next().unwrap_or(a).to_string()))
+                .filter(|s| !s.is_empty());
+            let speed = std::fs::read_to_string(format!("/sys/class/net/{dev}/speed"))
+                .ok()
+                .and_then(|s| s.trim().parse::<i64>().ok())
+                .filter(|&s| s > 0)
+                .map(|s| s as u32);
             st.links.push(Link { device: dev, kind, connection: conn, ipv4, speed });
         }
     }
     st.wifi_enabled = nmcli(&["radio", "wifi"]).map(|s| s.trim() == "enabled").unwrap_or(false);
-    st.airplane = Command::new("rfkill").args(["-n", "-o", "SOFT"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).is_some_and(|s| !s.trim().is_empty() && s.lines().all(|l| l.trim() == "blocked"));
+    st.airplane = Command::new("rfkill")
+        .args(["-n", "-o", "SOFT"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .is_some_and(|s| !s.trim().is_empty() && s.lines().all(|l| l.trim() == "blocked"));
     if st.wifi_enabled {
-        let known: Vec<String> = nmcli(&["-t", "-f", "NAME,TYPE", "con", "show"])?.lines().map(fields).filter(|f| f.get(1).is_some_and(|t| t == "802-11-wireless")).map(|f| f[0].clone()).collect();
+        let known: Vec<String> = nmcli(&["-t", "-f", "NAME,TYPE", "con", "show"])?
+            .lines()
+            .map(fields)
+            .filter(|f| f.get(1).is_some_and(|t| t == "802-11-wireless"))
+            .map(|f| f[0].clone())
+            .collect();
         st.networks = parse_wifi(&nmcli(&["-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "no"]).unwrap_or_default(), &known);
     }
     Ok(st)
@@ -146,7 +164,8 @@ pub async fn connect_new(device: &str, ssid: &str, password: Option<&str>, wpa3:
         return Err("Wi-Fi passwords are 8 to 63 characters.".into());
     }
     let conn = zbus::Connection::system().await.map_err(err)?;
-    let nm = zbus::Proxy::new(&conn, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager").await.map_err(err)?;
+    let nm =
+        zbus::Proxy::new(&conn, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager").await.map_err(err)?;
     let dev: zbus::OwnedObjectPath = nm.call("GetDeviceByIpIface", &(device,)).await.map_err(err)?;
 
     let mut settings: HashMap<&str, HashMap<&str, Value>> = HashMap::new();
@@ -176,6 +195,9 @@ mod tests {
         assert_eq!(fields(r"my\:net:x"), ["my:net", "x"]);
         let out = " :JioFiber-4G:62:WPA2\n*:Home:80:WPA2\n :JioFiber-4G:27:WPA2\n ::15:WPA2\n :Cafe:40:\n";
         let w = parse_wifi(out, &["JioFiber-4G".to_string()]);
-        assert_eq!(w.iter().map(|n| (n.ssid.as_str(), n.signal, n.in_use, n.known, n.secure)).collect::<Vec<_>>(), [("Home", 80, true, false, true), ("JioFiber-4G", 62, false, true, true), ("Cafe", 40, false, false, false)]);
+        assert_eq!(
+            w.iter().map(|n| (n.ssid.as_str(), n.signal, n.in_use, n.known, n.secure)).collect::<Vec<_>>(),
+            [("Home", 80, true, false, true), ("JioFiber-4G", 62, false, true, true), ("Cafe", 40, false, false, false)]
+        );
     }
 }

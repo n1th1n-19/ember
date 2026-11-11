@@ -37,17 +37,11 @@ fn read_pci_root(root: &Path) -> Vec<PciGpu> {
             if !read("class")?.starts_with("0x03") {
                 return None;
             }
-            let driver = fs::read_link(d.join("driver"))
+            let driver = fs::read_link(d.join("driver")).ok().and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned()));
+            let card = fs::read_dir(d.join("drm"))
                 .ok()
-                .and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned()));
-            let card = fs::read_dir(d.join("drm")).ok().and_then(|it| {
-                it.flatten().map(|c| c.path()).find(|p| {
-                    p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("card"))
-                })
-            });
-            let mhz = |f: &str| {
-                fs::read_to_string(card.as_ref()?.join(f)).ok()?.trim().parse().ok()
-            };
+                .and_then(|it| it.flatten().map(|c| c.path()).find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("card"))));
+            let mhz = |f: &str| fs::read_to_string(card.as_ref()?.join(f)).ok()?.trim().parse().ok();
             Some(PciGpu {
                 slot: e.file_name().to_string_lossy().into_owned(),
                 vendor: vendor_name(&read("vendor")?),

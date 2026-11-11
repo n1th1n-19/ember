@@ -2,7 +2,7 @@
 //! Settings shared by the app, applet and widget through cosmic-config
 //! (`~/.config/cosmic/io.github.n1th1n_19.Ember/v1/`). Every process watches it, so a
 //! change in the Settings page shows up in the panel and on the desktop right away.
-use cosmic::cosmic_config::{self, cosmic_config_derive::CosmicConfigEntry, Config, CosmicConfigEntry};
+use cosmic::cosmic_config::{self, Config, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
 use serde::{Deserialize, Serialize};
 
 use crate::mini::Key;

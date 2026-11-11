@@ -2,24 +2,24 @@
 //! Quick panel: Ember's take on the COSMIC panel applets in one page: clock and
 //! calendar, sound, Bluetooth, network, power and brightness, tiling, Do Not Disturb
 //! and the session menu.
-use cosmic::iced::Task;
+use crate::ink::{self, CYAN, MAGENTA, RED, YELLOW};
+use cosmic::Element;
 use cosmic::cosmic_config::{Config, ConfigGet, ConfigSet};
+use cosmic::iced::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, column, row};
-use cosmic::Element;
 use ember_core::calendar::{self, MONTHS, WEEKDAYS};
+use ember_core::control::CtlResult;
 use ember_core::control::bluetooth::{self, BtState};
 use ember_core::control::desktop::{self, Brightness, SessionAction};
+use ember_core::control::media::{self, Cmd, Player};
 use ember_core::control::network::{self, NetState};
 use ember_core::control::power::{self, PowerState, Profile};
 use ember_core::control::sound::{self, Device, Kind};
-use ember_core::control::media::{self, Cmd, Player};
-use ember_core::control::CtlResult;
 use std::sync::Arc;
-use crate::ink::{self, CYAN, MAGENTA, RED, YELLOW};
 
 use crate::glyphs::Glyph;
-use crate::widgets::{glyph_icon, banner, body, caption, card, comic_button, heading, muted, page};
+use crate::widgets::{banner, body, caption, card, comic_button, glyph_icon, heading, muted, page};
 
 /// Parts of the Quick panel; each panel applet shows one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,7 +244,11 @@ impl Quick {
             Msg::Bright(b) => self.bright = b,
             Msg::Power(p) => self.power = p,
             Msg::Volume(k, v) => {
-                if k == Kind::Output { self.out_vol = Some(v) } else { self.in_vol = Some(v) }
+                if k == Kind::Output {
+                    self.out_vol = Some(v)
+                } else {
+                    self.in_vol = Some(v)
+                }
             }
             Msg::ApplyVolume(k) => {
                 let v = if k == Kind::Output { self.out_vol.take() } else { self.in_vol.take() };
@@ -308,8 +312,12 @@ impl Quick {
                     return act("Keyboard light", async move { desktop::set_keyboard(v).await });
                 }
             }
-            Msg::Dnd(on) => return act_blocking(format!("Do Not Disturb {}", if on { "on" } else { "off" }), move || set_cosmic_bool(NOTIFY, "do_not_disturb", on)),
-            Msg::Autotile(on) => return act_blocking(format!("New workspaces {}", if on { "tiled" } else { "floating" }), move || set_cosmic_bool(COMP, "autotile", on)),
+            Msg::Dnd(on) => {
+                return act_blocking(format!("Do Not Disturb {}", if on { "on" } else { "off" }), move || set_cosmic_bool(NOTIFY, "do_not_disturb", on));
+            }
+            Msg::Autotile(on) => {
+                return act_blocking(format!("New workspaces {}", if on { "tiled" } else { "floating" }), move || set_cosmic_bool(COMP, "autotile", on));
+            }
             Msg::Month(by) => {
                 let n = calendar::now();
                 let (y, m) = self.month.unwrap_or((n.year, n.month));
@@ -359,7 +367,10 @@ impl Quick {
                     ..Default::default()
                 }))
             } else if dim {
-                c.class(cosmic::theme::Container::custom(|_| widget::container::Style { text_color: Some(cosmic::iced::Color { a: 0.35, ..ink::pal().text }), ..Default::default() }))
+                c.class(cosmic::theme::Container::custom(|_| widget::container::Style {
+                    text_color: Some(cosmic::iced::Color { a: 0.35, ..ink::pal().text }),
+                    ..Default::default()
+                }))
             } else {
                 c
             };
@@ -393,7 +404,15 @@ impl Quick {
     }
 
     /// "Label ........ value [button]" header line, then a full-width slider under it.
-    fn slider_block<'a>(glyph: Glyph, label: &str, v: f32, max: f32, on: impl Fn(f32) -> Msg + 'a, done: Msg, button: Option<Element<'a, Msg>>) -> Element<'a, Msg> {
+    fn slider_block<'a>(
+        glyph: Glyph,
+        label: &str,
+        v: f32,
+        max: f32,
+        on: impl Fn(f32) -> Msg + 'a,
+        done: Msg,
+        button: Option<Element<'a, Msg>>,
+    ) -> Element<'a, Msg> {
         let mut head = row::with_capacity(4)
             .spacing(10)
             .align_y(Alignment::Center)
@@ -416,7 +435,11 @@ impl Quick {
         if !sub.is_empty() {
             text = text.push(muted(sub));
         }
-        let mut r = row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(glyph_icon(glyph, 22.0)).push(widget::container(text).width(Length::Fill).clip(true));
+        let mut r = row::with_capacity(3)
+            .spacing(12)
+            .align_y(Alignment::Center)
+            .push(glyph_icon(glyph, 22.0))
+            .push(widget::container(text).width(Length::Fill).clip(true));
         if let Some(b) = button {
             r = r.push(b);
         }
@@ -463,7 +486,12 @@ impl Quick {
                     (true, None) => "Connected".into(),
                     (false, _) => "Paired".into(),
                 };
-                let btn = comic_button(if d.connected { "Disconnect" } else { "Connect" }, (!self.busy).then(|| Msg::BtConnect(d.path.clone(), !d.connected)), CYAN, d.connected);
+                let btn = comic_button(
+                    if d.connected { "Disconnect" } else { "Connect" },
+                    (!self.busy).then(|| Msg::BtConnect(d.path.clone(), !d.connected)),
+                    CYAN,
+                    d.connected,
+                );
                 col = col.push(Self::item(Glyph::Bluetooth { on: true, connected: d.connected }, d.name.clone(), sub, Some(btn)));
             }
             if bt.devices.is_empty() {
@@ -493,8 +521,22 @@ impl Quick {
                     s if s >= 20 => 1,
                     _ => 0,
                 };
-                let sub = format!("{}% · {}", w.signal, if w.known { "saved" } else if w.secure { "secured" } else { "open" });
-                let btn = if w.in_use { None } else { Some(comic_button("Connect", (!self.busy).then(|| Msg::Join(w.ssid.clone(), w.known, w.secure, w.wpa3)), CYAN, false)) };
+                let sub = format!(
+                    "{}% · {}",
+                    w.signal,
+                    if w.known {
+                        "saved"
+                    } else if w.secure {
+                        "secured"
+                    } else {
+                        "open"
+                    }
+                );
+                let btn = if w.in_use {
+                    None
+                } else {
+                    Some(comic_button("Connect", (!self.busy).then(|| Msg::Join(w.ssid.clone(), w.known, w.secure, w.wpa3)), CYAN, false))
+                };
                 let title = if w.in_use { format!("{} · connected", w.ssid) } else { w.ssid.clone() };
                 col = col.push(Self::item(Glyph::Wifi { bars }, title, sub, btn));
                 if let Some((ssid, _)) = &self.joining
@@ -639,7 +681,13 @@ impl Quick {
 
     fn session(&self) -> Element<'_, Msg> {
         let mut r = row::with_capacity(5).spacing(10);
-        for (a, accent) in [(SessionAction::Lock, CYAN), (SessionAction::LogOut, YELLOW), (SessionAction::Suspend, CYAN), (SessionAction::Restart, YELLOW), (SessionAction::ShutDown, RED)] {
+        for (a, accent) in [
+            (SessionAction::Lock, CYAN),
+            (SessionAction::LogOut, YELLOW),
+            (SessionAction::Suspend, CYAN),
+            (SessionAction::Restart, YELLOW),
+            (SessionAction::ShutDown, RED),
+        ] {
             r = r.push(comic_button(a.name(), Some(Msg::Session(a)), accent, false));
         }
         let mut col = column::with_capacity(3).spacing(10).push(heading("Session")).push(r.wrap());
@@ -661,8 +709,22 @@ impl Quick {
         if let Some((t, e)) = &self.status {
             col = col.push(banner(t, *e));
         }
-        let left = column::with_capacity(3).spacing(22).width(Length::FillPortion(1)).push(self.clock()).push(self.media_card()).push(self.dnd_card()).push(self.tiling_card()).push(self.awake_card()).push(self.session());
-        let right = column::with_capacity(4).spacing(22).width(Length::FillPortion(1)).push(self.sound()).push(self.bluetooth()).push(self.network()).push(self.power());
+        let left = column::with_capacity(3)
+            .spacing(22)
+            .width(Length::FillPortion(1))
+            .push(self.clock())
+            .push(self.media_card())
+            .push(self.dnd_card())
+            .push(self.tiling_card())
+            .push(self.awake_card())
+            .push(self.session());
+        let right = column::with_capacity(4)
+            .spacing(22)
+            .width(Length::FillPortion(1))
+            .push(self.sound())
+            .push(self.bluetooth())
+            .push(self.network())
+            .push(self.power());
         page(col.push(row::with_capacity(2).spacing(22).push(left).push(right)))
     }
 }

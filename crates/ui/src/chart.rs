@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Printed-style charts: white paper box, ink axis, flat fills + halftone, 3px ink lines.
+use cosmic::iced::advanced::text::Alignment;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::{Frame, Path, Stroke};
-use cosmic::iced::advanced::text::Alignment;
 use cosmic::iced::{Color, Point, Radians, Rectangle, Size, Vector};
 use ember_core::series::Series;
 use std::f32::consts::PI;
@@ -94,7 +94,10 @@ pub fn mirrored(f: &mut Frame, r: Rectangle, up: &Series, down: &Series, max: f3
     let bot = Rectangle::new(Point::new(inner.x, inner.y + half), Size::new(inner.width, half));
     area_in(f, top, up, max, c_up, false);
     area_in(f, bot, down, max, c_down, true);
-    f.stroke(&Path::line(Point::new(inner.x, inner.y + half), Point::new(inner.x + inner.width, inner.y + half)), ink::stroke(2.0).with_color(ink::pal().chart_line));
+    f.stroke(
+        &Path::line(Point::new(inner.x, inner.y + half), Point::new(inner.x + inner.width, inner.y + half)),
+        ink::stroke(2.0).with_color(ink::pal().chart_line),
+    );
 }
 
 /// Vertical bars 0..100 (per-core strip). Bar color follows its own level.
@@ -181,8 +184,26 @@ pub fn heat_strip(f: &mut Frame, r: Rectangle, cells: &[(String, f32, f32)]) {
         let lvl = if *v >= max * 0.9 { ink::Level::Hot } else { ink::Level::from_celsius(*v) };
         f.fill(&ink::rect(cell), lvl.color());
         f.stroke(&ink::rect(cell), ink::stroke(2.0));
-        ink::text(f, format!("{v:.0}°"), Point::new(cell.center_x(), cell.y + cell.height * 0.38), (w * 0.32).min(22.0), ink::DISPLAY, INK, Alignment::Center, Vertical::Center);
-        ink::text(f, label.clone(), Point::new(cell.center_x(), cell.y + cell.height * 0.78), (w * 0.16).clamp(8.0, 12.0), BODY, INK, Alignment::Center, Vertical::Center);
+        ink::text(
+            f,
+            format!("{v:.0}°"),
+            Point::new(cell.center_x(), cell.y + cell.height * 0.38),
+            (w * 0.32).min(22.0),
+            ink::DISPLAY,
+            INK,
+            Alignment::Center,
+            Vertical::Center,
+        );
+        ink::text(
+            f,
+            label.clone(),
+            Point::new(cell.center_x(), cell.y + cell.height * 0.78),
+            (w * 0.16).clamp(8.0, 12.0),
+            BODY,
+            INK,
+            Alignment::Center,
+            Vertical::Center,
+        );
     }
     f.stroke(&ink::rect(r), ink::stroke(3.0));
 }

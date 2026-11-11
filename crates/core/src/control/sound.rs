@@ -53,18 +53,20 @@ pub fn parse(json: &str, default: &str) -> Vec<Device> {
         .map(|r| {
             let vals: Vec<f32> = r.volume.values().filter_map(|c| c.value_percent.trim_end_matches('%').trim().parse::<f32>().ok()).collect();
             let volume = if vals.is_empty() { 0.0 } else { vals.iter().sum::<f32>() / vals.len() as f32 / 100.0 };
-            Device { default: r.name == default, description: if r.description.is_empty() { r.name.clone() } else { r.description }, name: r.name, volume, muted: r.mute }
+            Device {
+                default: r.name == default,
+                description: if r.description.is_empty() { r.name.clone() } else { r.description },
+                name: r.name,
+                volume,
+                muted: r.mute,
+            }
         })
         .collect()
 }
 
 fn pactl(args: &[&str]) -> CtlResult<String> {
     let out = Command::new("pactl").args(args).output().map_err(|e| format!("pactl not available: {e}"))?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+    if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).into_owned()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
 }
 
 /// Blocking.

@@ -15,10 +15,7 @@ pub struct Battery {
 
 /// Parse a power_supply `uevent` file. Returns None if it isn't a battery.
 pub fn parse_uevent(text: &str) -> Option<Battery> {
-    let kv: HashMap<&str, &str> = text
-        .lines()
-        .filter_map(|l| l.strip_prefix("POWER_SUPPLY_")?.split_once('='))
-        .collect();
+    let kv: HashMap<&str, &str> = text.lines().filter_map(|l| l.strip_prefix("POWER_SUPPLY_")?.split_once('=')).collect();
     if kv.get("TYPE") != Some(&"Battery") || kv.get("PRESENT") == Some(&"0") {
         return None;
     }
@@ -27,11 +24,9 @@ pub fn parse_uevent(text: &str) -> Option<Battery> {
         (Some(a), Some(b)) if b > 0.0 => Some((a / b) as f32),
         _ => None,
     };
-    let health = ratio(num("ENERGY_FULL"), num("ENERGY_FULL_DESIGN"))
-        .or_else(|| ratio(num("CHARGE_FULL"), num("CHARGE_FULL_DESIGN")));
+    let health = ratio(num("ENERGY_FULL"), num("ENERGY_FULL_DESIGN")).or_else(|| ratio(num("CHARGE_FULL"), num("CHARGE_FULL_DESIGN")));
     // µW, or µA × µV
-    let power_uw = num("POWER_NOW")
-        .or_else(|| Some(num("CURRENT_NOW")? * num("VOLTAGE_NOW")? / 1e6));
+    let power_uw = num("POWER_NOW").or_else(|| Some(num("CURRENT_NOW")? * num("VOLTAGE_NOW")? / 1e6));
     Some(Battery {
         name: kv.get("NAME").unwrap_or(&"battery").to_string(),
         percent: num("CAPACITY").map(|v| v as f32),
@@ -49,10 +44,7 @@ pub fn read_all() -> Vec<Battery> {
 
 fn read_dir(root: &Path) -> Vec<Battery> {
     let Ok(entries) = fs::read_dir(root) else { return vec![] };
-    entries
-        .flatten()
-        .filter_map(|e| parse_uevent(&fs::read_to_string(e.path().join("uevent")).ok()?))
-        .collect()
+    entries.flatten().filter_map(|e| parse_uevent(&fs::read_to_string(e.path().join("uevent")).ok()?)).collect()
 }
 
 #[cfg(test)]

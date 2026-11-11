@@ -4,15 +4,15 @@
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use cosmic::Element;
 use cosmic::app::{Core, Task};
 use cosmic::iced::window::Id;
 use cosmic::iced::{Alignment, Length, Rectangle, Subscription};
 use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, row};
-use cosmic::Element;
 use ember_core::calendar::{self, MONTHS};
-use ember_ui::ink;
 use ember_ui::glyphs::{Glyph, Icon};
+use ember_ui::ink;
 use ember_ui::quick::{self, Quick, Section};
 
 pub trait Kind: 'static {
@@ -75,7 +75,9 @@ impl<K: Kind> Applet<K> {
             Section::Network => match q.net() {
                 Some(n) if n.airplane => Glyph::Airplane,
                 Some(n) if n.links.iter().any(|l| l.kind == "ethernet") => Glyph::Wired,
-                Some(n) if n.links.iter().any(|l| l.kind == "wifi") => Glyph::Wifi { bars: n.networks.iter().find(|w| w.in_use).map_or(3, |w| (w.signal / 25).min(3)) },
+                Some(n) if n.links.iter().any(|l| l.kind == "wifi") => {
+                    Glyph::Wifi { bars: n.networks.iter().find(|w| w.in_use).map_or(3, |w| (w.signal / 25).min(3)) }
+                }
                 Some(_) => Glyph::Offline,
                 None => Glyph::Wired,
             },
@@ -109,7 +111,9 @@ impl<K: Kind> Applet<K> {
     fn tooltip(&self) -> String {
         let q = &self.quick;
         match K::SECTION {
-            Section::Sound => q.output().map_or("Sound".into(), |d| format!("{} · {:.0}%{}", d.description, d.volume * 100.0, if d.muted { " (muted)" } else { "" })),
+            Section::Sound => {
+                q.output().map_or("Sound".into(), |d| format!("{} · {:.0}%{}", d.description, d.volume * 100.0, if d.muted { " (muted)" } else { "" }))
+            }
             Section::Bluetooth => q.bt().map_or("Bluetooth".into(), |b| {
                 let on: Vec<_> = b.devices.iter().filter(|d| d.connected).map(|d| d.name.as_str()).collect();
                 if on.is_empty() { "Bluetooth".into() } else { format!("Bluetooth · {}", on.join(", ")) }
@@ -120,7 +124,13 @@ impl<K: Kind> Applet<K> {
             Section::Tiling => "Tiling".into(),
             Section::Session => "Lock, log out, suspend, restart, shut down".into(),
             Section::Media => q.player().map_or("Nothing playing".into(), |p| format!("{} · {}", p.app, p.title)),
-            Section::Awake => if q.awake() { "Keep awake: on (click to allow sleep)".into() } else { "Keep awake: off (click to stay awake)".into() },
+            Section::Awake => {
+                if q.awake() {
+                    "Keep awake: on (click to allow sleep)".into()
+                } else {
+                    "Keep awake: off (click to stay awake)".into()
+                }
+            }
             Section::Clock => "Calendar".into(),
         }
     }
@@ -134,14 +144,13 @@ fn popup<K: Kind>(offset: cosmic::iced::Vector, bounds: Rectangle) -> Message {
             let id = Id::unique();
             state.popup = Some(id);
             let mut s = state.core.applet.get_popup_settings(state.core.main_window_id().unwrap(), id, None, None, None);
-            s.positioner.anchor_rect = Rectangle { x: (bounds.x - offset.x) as i32, y: (bounds.y - offset.y) as i32, width: bounds.width as i32, height: bounds.height as i32 };
+            s.positioner.anchor_rect =
+                Rectangle { x: (bounds.x - offset.x) as i32, y: (bounds.y - offset.y) as i32, width: bounds.width as i32, height: bounds.height as i32 };
             // Quick panel cards need more room than the stock 360px popups
             s.positioner.size_limits = cosmic::iced::Limits::NONE.min_width(POPUP_W).max_width(POPUP_W).min_height(1.0).max_height(1000.0);
             s
         },
-        Some(Box::new(|state: &Applet<K>| {
-            Element::from(popup_box(state.quick.section(K::SECTION).map(Message::Quick))).map(cosmic::Action::App)
-        })),
+        Some(Box::new(|state: &Applet<K>| Element::from(popup_box(state.quick.section(K::SECTION).map(Message::Quick))).map(cosmic::Action::App))),
     ))
 }
 

@@ -7,7 +7,7 @@ use cosmic::iced::widget::canvas::{Frame, Path, Stroke};
 use cosmic::iced::{Point, Rectangle, Size, Vector};
 use std::f32::consts::TAU;
 
-use super::{at, blades, darker, fit, polyline, sub, Block};
+use super::{Block, at, blades, darker, fit, polyline, sub};
 use crate::ink::{self, CYAN, DISPLAY, GREY, INK, PAPER, RED, YELLOW};
 
 /// `speed` 0..1 drives fan rotation; `awake=false` draws the sleeping card;

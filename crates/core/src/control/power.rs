@@ -3,11 +3,7 @@
 //! All optional: on machines without the daemon, `read()` returns None and the UI hides it.
 use super::CtlResult;
 
-#[zbus::proxy(
-    interface = "com.system76.PowerDaemon",
-    default_service = "com.system76.PowerDaemon",
-    default_path = "/com/system76/PowerDaemon"
-)]
+#[zbus::proxy(interface = "com.system76.PowerDaemon", default_service = "com.system76.PowerDaemon", default_path = "/com/system76/PowerDaemon")]
 trait PowerDaemon {
     fn get_profile(&self) -> zbus::Result<String>;
     #[zbus(allow_interactive_auth)]

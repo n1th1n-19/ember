@@ -4,11 +4,7 @@ use zbus::OwnedObjectPath;
 
 use super::CtlResult;
 
-#[zbus::proxy(
-    interface = "org.freedesktop.systemd1.Manager",
-    default_service = "org.freedesktop.systemd1",
-    default_path = "/org/freedesktop/systemd1"
-)]
+#[zbus::proxy(interface = "org.freedesktop.systemd1.Manager", default_service = "org.freedesktop.systemd1", default_path = "/org/freedesktop/systemd1")]
 trait Manager {
     #[allow(clippy::type_complexity)]
     fn list_units(&self) -> zbus::Result<Vec<(String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath)>>;

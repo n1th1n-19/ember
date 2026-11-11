@@ -6,7 +6,7 @@ use cosmic::iced::widget::canvas::Frame;
 use cosmic::iced::{Color, Point, Rectangle, Size};
 use ember_core::Snapshot;
 
-use crate::ink::{self, Level, CYAN, DISPLAY, GREY, MAGENTA, PAPER, RED, YELLOW};
+use crate::ink::{self, CYAN, DISPLAY, GREY, Level, MAGENTA, PAPER, RED, YELLOW};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -65,7 +65,9 @@ pub fn read(s: &Snapshot, key: Key) -> Reading {
     let (value, frac, color) = match key {
         Key::Cpu => (ink::opt(s.cpu_percent, |v| format!("{v:.0}%")), s.cpu_percent.map(|v| v / 100.0), s.cpu_percent.map_or(GREY, pct_color)),
         Key::Ram => (ink::opt(s.mem_percent(), |v| format!("{v:.0}%")), s.mem_percent().map(|v| v / 100.0), MAGENTA),
-        Key::Temp => (ink::opt(s.cpu_temp(), |c| format!("{c:.0}°")), s.cpu_temp().map(|c| c / 100.0), s.cpu_temp().map_or(GREY, |c| Level::from_celsius(c).color())),
+        Key::Temp => {
+            (ink::opt(s.cpu_temp(), |c| format!("{c:.0}°")), s.cpu_temp().map(|c| c / 100.0), s.cpu_temp().map_or(GREY, |c| Level::from_celsius(c).color()))
+        }
         Key::Gpu => {
             let g = s.gpus.iter().find(|g| g.driver.is_some());
             match g {
@@ -129,7 +131,16 @@ pub fn meters(f: &mut Frame, r: Rectangle, readings: &[Reading], horizontal: boo
         f.stroke(&ink::rect(bar), ink::stroke(2.0));
         if label_h > 0.0 {
             let size = label_h.min(cell.width / (rd.value.chars().count().max(2) as f32 * 0.5));
-            ink::text(f, rd.value.clone(), Point::new(cell.center_x(), cell.y + cell.height - label_h / 2.0), size, DISPLAY, ink::pal().text, Alignment::Center, Vertical::Center);
+            ink::text(
+                f,
+                rd.value.clone(),
+                Point::new(cell.center_x(), cell.y + cell.height - label_h / 2.0),
+                size,
+                DISPLAY,
+                ink::pal().text,
+                Alignment::Center,
+                Vertical::Center,
+            );
         }
     }
 }

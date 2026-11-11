@@ -6,8 +6,8 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::{Frame, Path};
 use cosmic::iced::{Point, Rectangle, Size, Vector};
 
-use super::{at, cast_shadow, cylinder, darker, dial, fit, floor, puff, sub, Block};
-use crate::ink::{self, Level, BODY, GREY, INK, PAPER, RED, WHITE, YELLOW};
+use super::{Block, at, cast_shadow, cylinder, darker, dial, fit, floor, puff, sub};
+use crate::ink::{self, BODY, GREY, INK, Level, PAPER, RED, WHITE, YELLOW};
 
 pub struct Engine<'a> {
     pub total: f32,
@@ -99,7 +99,16 @@ pub fn draw(f: &mut Frame, r: Rectangle, e: &Engine, pose: u64) {
             let x = glass.x + glass.width * (0.2 + 0.3 * k as f32);
             let y = glass.y + glass.height * (0.15 + ((pose + k * 2) % 4) as f32 * 0.08);
             let s = 4.0;
-            let star = ink::poly(&[Point::new(x, y - s), Point::new(x + 1.2, y - 1.2), Point::new(x + s, y), Point::new(x + 1.2, y + 1.2), Point::new(x, y + s), Point::new(x - 1.2, y + 1.2), Point::new(x - s, y), Point::new(x - 1.2, y - 1.2)]);
+            let star = ink::poly(&[
+                Point::new(x, y - s),
+                Point::new(x + 1.2, y - 1.2),
+                Point::new(x + s, y),
+                Point::new(x + 1.2, y + 1.2),
+                Point::new(x, y + s),
+                Point::new(x - 1.2, y + 1.2),
+                Point::new(x - s, y),
+                Point::new(x - 1.2, y - 1.2),
+            ]);
             f.fill(&star, YELLOW);
         }
     }

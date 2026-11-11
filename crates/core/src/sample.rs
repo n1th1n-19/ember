@@ -140,22 +140,14 @@ impl Sampler {
         let temps = self.comps.as_mut().map_or_else(Vec::new, |c| {
             c.refresh(true);
             c.iter()
-                .filter_map(|c| {
-                    Some(Temp {
-                        label: c.label().to_string(),
-                        celsius: c.temperature().filter(|t| t.is_finite())?,
-                        critical: c.critical(),
-                    })
-                })
+                .filter_map(|c| Some(Temp { label: c.label().to_string(), celsius: c.temperature().filter(|t| t.is_finite())?, critical: c.critical() }))
                 .collect()
         });
 
         // PCI list is the source of truth for *which* GPUs exist; NVML (via sysinfo) adds usage/VRAM.
         let nvml: Vec<_> = self.gpus.as_mut().map_or_else(Vec::new, |g| {
             g.refresh(true);
-            g.iter()
-                .map(|g| (g.model().unwrap_or("NVIDIA GPU").to_string(), g.usage(), g.used_memory(), g.total_memory()))
-                .collect()
+            g.iter().map(|g| (g.model().unwrap_or("NVIDIA GPU").to_string(), g.usage(), g.used_memory(), g.total_memory())).collect()
         });
         let mut nvml = nvml.into_iter();
         let gpus = gpu::read_pci()

@@ -43,10 +43,12 @@ pub fn darker(c: Color, k: f32) -> Color {
 }
 
 pub fn ellipse_pts(c: Point, rx: f32, ry: f32, a0: f32, a1: f32, n: usize) -> Vec<Point> {
-    (0..=n).map(|i| {
-        let a = a0 + (a1 - a0) * i as f32 / n as f32;
-        Point::new(c.x + a.cos() * rx, c.y + a.sin() * ry)
-    }).collect()
+    (0..=n)
+        .map(|i| {
+            let a = a0 + (a1 - a0) * i as f32 / n as f32;
+            Point::new(c.x + a.cos() * rx, c.y + a.sin() * ry)
+        })
+        .collect()
 }
 
 pub fn ellipse(c: Point, rx: f32, ry: f32) -> Path {

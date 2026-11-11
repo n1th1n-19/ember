@@ -1,1 +1,7 @@
-fn main() { zbus::block_on(async { println!("{:?}", ember_core::control::media::read().await); let fd = ember_core::control::desktop::inhibit_sleep().await; println!("inhibit: {:?}", fd.is_ok()); }); }
+fn main() {
+    zbus::block_on(async {
+        println!("{:?}", ember_core::control::media::read().await);
+        let fd = ember_core::control::desktop::inhibit_sleep().await;
+        println!("inhibit: {:?}", fd.is_ok());
+    });
+}

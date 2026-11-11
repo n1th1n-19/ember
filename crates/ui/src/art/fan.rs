@@ -7,7 +7,7 @@ use cosmic::iced::widget::canvas::{Frame, Path};
 use cosmic::iced::{Point, Rectangle, Size, Vector};
 use std::f32::consts::TAU;
 
-use super::{at, blades, cast_shadow, darker, ellipse_pts, fit, floor, polyline, rot_rect, sub, Block};
+use super::{Block, at, blades, cast_shadow, darker, ellipse_pts, fit, floor, polyline, rot_rect, sub};
 use crate::ink::{self, DISPLAY, GREY, INK, PAPER, WHITE, YELLOW};
 
 /// `speed` None = no fans exposed (taped). Some(0..1) = spinning.
@@ -19,7 +19,8 @@ pub fn draw(f: &mut Frame, r: Rectangle, speed: Option<f32>, pose: u64) {
     let bx = Block::new(front, Vector::new(r.width * 0.12, -r.height * 0.08));
     // feet
     for x in [0.15, 0.75] {
-        let foot = Rectangle::new(Point::new(front.x + front.width * x, front.y + front.height), Size::new(front.width * 0.12, floor_y - front.y - front.height));
+        let foot =
+            Rectangle::new(Point::new(front.x + front.width * x, front.y + front.height), Size::new(front.width * 0.12, floor_y - front.y - front.height));
         ink::boxed(f, foot, INK, 1.0, 0.0);
     }
     cast_shadow(f, Point::new(front.x + front.width, floor_y), Point::new(front.x + front.width + bx.depth.x, floor_y), r.width * 0.12);

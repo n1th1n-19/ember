@@ -6,8 +6,8 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::{Frame, Path, Stroke};
 use cosmic::iced::{Color, Point, Rectangle, Size, Vector};
 
-use super::{darker, fit, polyline, sub, Block};
-use crate::ink::{self, Level, BODY, CYAN, DISPLAY, GREY, INK, PAPER, RED, WHITE};
+use super::{Block, darker, fit, polyline, sub};
+use crate::ink::{self, BODY, CYAN, DISPLAY, GREY, INK, Level, PAPER, RED, WHITE};
 
 pub struct Gauge {
     pub label: String,
@@ -82,7 +82,10 @@ pub fn draw(f: &mut Frame, r: Rectangle, gauges: &[Gauge], pose: u64) {
         f.fill(&Path::circle(bulb_c, bulb_r), RED);
         f.stroke(&Path::circle(bulb_c, bulb_r), ink::stroke(2.5));
         f.fill(&Path::circle(bulb_c + Vector::new(-bulb_r * 0.35, -bulb_r * 0.35), bulb_r * 0.22), WHITE);
-        f.stroke(&Path::line(Point::new(tube.x + tube_w * 0.25, tube.y + 8.0), Point::new(tube.x + tube_w * 0.25, merc_top - 4.0)), Stroke::default().with_color(darker(WHITE, 0.85)).with_width(2.0));
+        f.stroke(
+            &Path::line(Point::new(tube.x + tube_w * 0.25, tube.y + 8.0), Point::new(tube.x + tube_w * 0.25, merc_top - 4.0)),
+            Stroke::default().with_color(darker(WHITE, 0.85)).with_width(2.0),
+        );
         ink::boxed(f, Rectangle::new(Point::new(cx - tube_w * 0.7, tube.y - 6.0), Size::new(tube_w * 1.4, 8.0)), GREY, 2.0, 0.0);
 
         if hot {
@@ -101,7 +104,16 @@ pub fn draw(f: &mut Frame, r: Rectangle, gauges: &[Gauge], pose: u64) {
         }
 
         // reading + hanging label tag on the shelf front
-        ink::text(f, format!("{:.0}°", g.celsius), Point::new(cx, plate.y + plate.height - 4.0), (col * 0.2).clamp(12.0, 24.0), DISPLAY, if hot { RED } else { INK }, Alignment::Center, Vertical::Bottom);
+        ink::text(
+            f,
+            format!("{:.0}°", g.celsius),
+            Point::new(cx, plate.y + plate.height - 4.0),
+            (col * 0.2).clamp(12.0, 24.0),
+            DISPLAY,
+            if hot { RED } else { INK },
+            Alignment::Center,
+            Vertical::Bottom,
+        );
         let tag = Rectangle::new(Point::new(cx - col * 0.3, shelf.front.y + shelf.front.height * 0.15), Size::new(col * 0.6, shelf.front.height * 0.7));
         ink::boxed(f, tag, WHITE, 1.5, 0.0);
         ink::text(f, g.label.clone(), tag.center(), (tag.height * 0.65).clamp(8.0, 13.0), BODY, INK, Alignment::Center, Vertical::Center);

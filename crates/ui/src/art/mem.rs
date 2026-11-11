@@ -8,7 +8,7 @@ use cosmic::iced::{Point, Rectangle, Size, Vector};
 use std::f32::consts::PI;
 
 use super::{at, cast_shadow, cylinder, darker, disc, ellipse_pts, fit, floor, polyline};
-use crate::ink::{self, Level, BODY, GREY, INK, MAGENTA, PAPER, WHITE};
+use crate::ink::{self, BODY, GREY, INK, Level, MAGENTA, PAPER, WHITE};
 
 pub fn draw(f: &mut Frame, r: Rectangle, ram: f32, swap: f32, pose: u64) {
     let r = fit(r, 1.05);
@@ -56,7 +56,10 @@ pub fn draw(f: &mut Frame, r: Rectangle, ram: f32, swap: f32, pose: u64) {
         }
     }
     // glass shine strip (flat white)
-    f.stroke(&Path::line(Point::new(c.x - rx * 0.6, c.y + h * 0.12), Point::new(c.x - rx * 0.6, c.y + h * 0.55)), Stroke::default().with_color(WHITE).with_width(6.0));
+    f.stroke(
+        &Path::line(Point::new(c.x - rx * 0.6, c.y + h * 0.12), Point::new(c.x - rx * 0.6, c.y + h * 0.55)),
+        Stroke::default().with_color(WHITE).with_width(6.0),
+    );
 
     // two metal bands (front half of an ellipse)
     for k in [0.33f32, 0.7] {
@@ -123,5 +126,11 @@ pub fn draw(f: &mut Frame, r: Rectangle, ram: f32, swap: f32, pose: u64) {
     ink::text(f, "SWAP", tag.center(), (tag.height * 0.6).max(8.0), BODY, INK, Alignment::Center, Vertical::Center);
     cast_shadow(f, Point::new(bucket_c.x, floor_y), Point::new(bucket_c.x + brx, floor_y), r.width * 0.08);
     // bucket sits on the floor: short stand
-    f.fill(&ink::rect(Rectangle::new(Point::new(bucket_c.x - brx * 0.6, bucket_c.y + bh + bry * 0.5), Size::new(brx * 1.2, floor_y - bucket_c.y - bh - bry * 0.5))), INK);
+    f.fill(
+        &ink::rect(Rectangle::new(
+            Point::new(bucket_c.x - brx * 0.6, bucket_c.y + bh + bry * 0.5),
+            Size::new(brx * 1.2, floor_y - bucket_c.y - bh - bry * 0.5),
+        )),
+        INK,
+    );
 }

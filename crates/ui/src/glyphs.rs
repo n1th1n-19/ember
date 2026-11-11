@@ -2,8 +2,8 @@
 //! Panel icons drawn in code: thick strokes in the panel's text color, Ember accents for
 //! state (battery fill, connected dot, DND slash, steam). One look across all applets,
 //! and nothing depends on which icon theme happens to be installed.
-use cosmic::iced::widget::canvas::{self, path::Arc, Frame, Geometry, Path, Stroke};
-use cosmic::iced::{mouse, Color, Point, Radians, Rectangle, Size, Vector};
+use cosmic::iced::widget::canvas::{self, Frame, Geometry, Path, Stroke, path::Arc};
+use cosmic::iced::{Color, Point, Radians, Rectangle, Size, Vector, mouse};
 use cosmic::{Renderer, Theme};
 use std::f32::consts::PI;
 
@@ -12,20 +12,41 @@ use crate::ink::{CYAN, RED, YELLOW};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Glyph {
     /// level 0..=3 sound waves
-    Speaker { level: u8, muted: bool },
-    Mic { muted: bool },
-    Bluetooth { on: bool, connected: bool },
+    Speaker {
+        level: u8,
+        muted: bool,
+    },
+    Mic {
+        muted: bool,
+    },
+    Bluetooth {
+        on: bool,
+        connected: bool,
+    },
     Wired,
     /// bars 0..=3
-    Wifi { bars: u8 },
+    Wifi {
+        bars: u8,
+    },
     Airplane,
     Offline,
-    Battery { frac: Option<f32>, charging: bool },
-    Bell { dnd: bool },
-    Tiles { tiled: bool },
+    Battery {
+        frac: Option<f32>,
+        charging: bool,
+    },
+    Bell {
+        dnd: bool,
+    },
+    Tiles {
+        tiled: bool,
+    },
     Power,
-    Note { playing: bool },
-    Cup { on: bool },
+    Note {
+        playing: bool,
+    },
+    Cup {
+        on: bool,
+    },
     Bulb,
     Keyboard,
 }
@@ -134,7 +155,22 @@ pub fn draw(f: &mut Frame, r: Rectangle, g: Glyph, fg: Color) {
             }
         }
         Glyph::Airplane => {
-            let plane = poly(&[p(0.5, 0.08), p(0.58, 0.4), p(0.92, 0.6), p(0.58, 0.55), p(0.56, 0.8), p(0.68, 0.9), p(0.32, 0.9), p(0.44, 0.8), p(0.42, 0.55), p(0.08, 0.6), p(0.42, 0.4)], true);
+            let plane = poly(
+                &[
+                    p(0.5, 0.08),
+                    p(0.58, 0.4),
+                    p(0.92, 0.6),
+                    p(0.58, 0.55),
+                    p(0.56, 0.8),
+                    p(0.68, 0.9),
+                    p(0.32, 0.9),
+                    p(0.44, 0.8),
+                    p(0.42, 0.55),
+                    p(0.08, 0.6),
+                    p(0.42, 0.4),
+                ],
+                true,
+            );
             f.fill(&plane, fg);
         }
         Glyph::Offline => {
@@ -153,7 +189,17 @@ pub fn draw(f: &mut Frame, r: Rectangle, g: Glyph, fg: Color) {
             if charging {
                 let c = body.center();
                 let u = body.height * 0.42;
-                let bolt = poly(&[c + Vector::new(u * 0.25, -u), c + Vector::new(-u * 0.45, u * 0.12), c + Vector::new(0.0, u * 0.12), c + Vector::new(-u * 0.25, u), c + Vector::new(u * 0.45, -u * 0.12), c + Vector::new(0.0, -u * 0.12)], true);
+                let bolt = poly(
+                    &[
+                        c + Vector::new(u * 0.25, -u),
+                        c + Vector::new(-u * 0.45, u * 0.12),
+                        c + Vector::new(0.0, u * 0.12),
+                        c + Vector::new(-u * 0.25, u),
+                        c + Vector::new(u * 0.45, -u * 0.12),
+                        c + Vector::new(0.0, -u * 0.12),
+                    ],
+                    true,
+                );
                 f.fill(&bolt, fg);
             }
         }

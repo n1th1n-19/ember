@@ -6,8 +6,8 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::Frame;
 use cosmic::iced::{Point, Rectangle, Size, Vector};
 
-use super::{cast_shadow, darker, fit, floor, sub, Block};
-use crate::ink::{self, Level, BODY, CYAN, GREY, INK, MAGENTA, PAPER, WHITE, YELLOW};
+use super::{Block, cast_shadow, darker, fit, floor, sub};
+use crate::ink::{self, BODY, CYAN, GREY, INK, Level, MAGENTA, PAPER, WHITE, YELLOW};
 
 pub struct Drawer {
     pub label: String,
@@ -61,7 +61,12 @@ pub fn draw(f: &mut Frame, r: Rectangle, drawers: &[Drawer], pose: u64) {
         for k in 0..5 {
             let u = 0.1 + k as f32 * 0.18;
             let base = drawer.on_top(u, 0.5);
-            let tab = [base, base + Vector::new(0.0, -s.height * 0.28), base + Vector::new(s.width * 0.12, -s.height * 0.28), base + Vector::new(s.width * 0.14, 0.0)];
+            let tab = [
+                base,
+                base + Vector::new(0.0, -s.height * 0.28),
+                base + Vector::new(s.width * 0.12, -s.height * 0.28),
+                base + Vector::new(s.width * 0.14, 0.0),
+            ];
             f.fill(&ink::poly(&tab), colors[k % 4]);
             f.stroke(&ink::poly(&tab), ink::stroke(1.5));
         }
@@ -79,9 +84,27 @@ fn drawer_front(f: &mut Frame, s: Rectangle, d: &Drawer, r: Rectangle) {
     ink::boxed(f, card, GREY, 2.0, 0.0);
     let paper = ink::inset(card, 3.0);
     f.fill(&ink::rect(paper), WHITE);
-    ink::text(f, d.label.clone(), Point::new(paper.center_x(), paper.center_y()), (paper.height * 0.7).clamp(8.0, 14.0), BODY, INK, Alignment::Center, Vertical::Center);
+    ink::text(
+        f,
+        d.label.clone(),
+        Point::new(paper.center_x(), paper.center_y()),
+        (paper.height * 0.7).clamp(8.0, 14.0),
+        BODY,
+        INK,
+        Alignment::Center,
+        Vertical::Center,
+    );
     crate::chart::hbar(f, sub(s, 0.1, 0.64, 0.5, 0.18), d.used, Level::from_percent(d.used * 100.0).color());
-    ink::text(f, format!("{:.0}%", d.used * 100.0), Point::new(s.x + s.width * 0.64, s.y + s.height * 0.73), (s.height * 0.22).clamp(9.0, 14.0), BODY, INK, Alignment::Left, Vertical::Center);
+    ink::text(
+        f,
+        format!("{:.0}%", d.used * 100.0),
+        Point::new(s.x + s.width * 0.64, s.y + s.height * 0.73),
+        (s.height * 0.22).clamp(9.0, 14.0),
+        BODY,
+        INK,
+        Alignment::Left,
+        Vertical::Center,
+    );
     // cup handle
     let handle = sub(s, 0.7, 0.22, 0.2, 0.2);
     ink::boxed(f, handle, darker(GREY, 0.8), 2.0, 2.0);

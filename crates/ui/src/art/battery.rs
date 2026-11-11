@@ -8,7 +8,7 @@ use cosmic::iced::widget::canvas::{Frame, Path, Stroke};
 use cosmic::iced::{Color, Point, Rectangle, Size, Vector};
 use std::f32::consts::PI;
 
-use super::{cast_shadow, cylinder, darker, ellipse_pts, fit, floor, polyline, sub, Block};
+use super::{Block, cast_shadow, cylinder, darker, ellipse_pts, fit, floor, polyline, sub};
 use crate::ink::{self, DISPLAY, GREY, INK, PAPER, RED, WHITE, YELLOW};
 
 const WRAP: Color = Color { r: 0.16, g: 0.15, b: 0.19, a: 1.0 };
@@ -46,7 +46,16 @@ pub fn draw(f: &mut Frame, r: Rectangle, pct: Option<f32>, charging: bool, pose:
     let mut shade = vec![Point::new(c.x + rx * x0, band_top + ry * 0.9), Point::new(c.x + rx, band_top)];
     shade.extend(ellipse_pts(Point::new(c.x, band_bot), rx, ry, 0.0, x0.acos(), 6));
     super::hatch_poly(f, &shade, 5.0, 1.2, Color { a: 0.45, ..INK });
-    ink::text(f, "EMBER CELL", Point::new(c.x - rx * 0.1, (band_top + band_bot) / 2.0 + ry * 0.5), (rx * 0.2).clamp(10.0, 22.0), DISPLAY, INK, Alignment::Center, Vertical::Center);
+    ink::text(
+        f,
+        "EMBER CELL",
+        Point::new(c.x - rx * 0.1, (band_top + band_bot) / 2.0 + ry * 0.5),
+        (rx * 0.2).clamp(10.0, 22.0),
+        DISPLAY,
+        INK,
+        Alignment::Center,
+        Vertical::Center,
+    );
 
     // charge window: glass strip on the front, fills from the bottom
     let win = Rectangle::new(Point::new(c.x - rx * 0.32, band_bot + ry + h * 0.06), Size::new(rx * 0.5, bot.y - band_bot - ry - h * 0.12));
@@ -72,7 +81,10 @@ pub fn draw(f: &mut Frame, r: Rectangle, pct: Option<f32>, charging: bool, pose:
         }
     });
     f.stroke(&ticks, ink::stroke(1.5));
-    f.stroke(&Path::line(Point::new(glass.x + glass.width * 0.8, glass.y + 6.0), Point::new(glass.x + glass.width * 0.8, glass.y + glass.height * 0.4)), Stroke::default().with_color(WHITE).with_width(3.0));
+    f.stroke(
+        &Path::line(Point::new(glass.x + glass.width * 0.8, glass.y + 6.0), Point::new(glass.x + glass.width * 0.8, glass.y + glass.height * 0.4)),
+        Stroke::default().with_color(WHITE).with_width(3.0),
+    );
 
     // + terminal on the cap
     let term = c + Vector::new(0.0, -r.height * 0.05);
@@ -82,7 +94,12 @@ pub fn draw(f: &mut Frame, r: Rectangle, pct: Option<f32>, charging: bool, pose:
     if charging {
         // cable: socket → over the cell → clipped onto the terminal
         let plug = super::at(socket.front, 0.5, 0.45);
-        let cable = [plug, plug + Vector::new(-r.width * 0.05, -r.height * 0.08), Point::new(c.x + rx * 0.9, r.y + r.height * 0.06), term + Vector::new(rx * 0.1, -4.0)];
+        let cable = [
+            plug,
+            plug + Vector::new(-r.width * 0.05, -r.height * 0.08),
+            Point::new(c.x + rx * 0.9, r.y + r.height * 0.06),
+            term + Vector::new(rx * 0.1, -4.0),
+        ];
         polyline(f, &cable, Stroke::default().with_color(INK).with_width(7.0));
         polyline(f, &cable, Stroke::default().with_color(GREY).with_width(3.0));
         ink::boxed(f, Rectangle::new(term + Vector::new(-8.0, -14.0), Size::new(16.0, 10.0)), RED, 2.0, 0.0);

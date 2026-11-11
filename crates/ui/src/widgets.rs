@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Comic-styled real widgets for interactive pages (app pages and applet popups) (keyboard focus and a11y come from
 //! libcosmic). Same tokens as the canvas pages: ink borders, hard unblurred shadows.
+use crate::ink::{self, BODY, DISPLAY, INK, PAPER, YELLOW};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Vector};
 use cosmic::widget::{self, button, container};
-use cosmic::{theme, Element};
-use crate::ink::{self, BODY, DISPLAY, INK, PAPER, YELLOW};
-
+use cosmic::{Element, theme};
 
 fn shadow(offset: f32) -> Shadow {
     Shadow { color: Color::BLACK, offset: Vector::new(offset, offset), blur_radius: 0.0 }
@@ -76,29 +75,25 @@ fn button_style(fill: Color, on: bool, offset: f32) -> button::Style {
 /// Comic button. `on` = filled with the accent (selected / primary); off = outlined.
 /// Hover/press nudge it toward its shadow like the web recipe; `None` message = disabled.
 pub fn comic_button<'a, M: Clone + 'static>(label: &str, msg: Option<M>, accent: Color, on: bool) -> Element<'a, M> {
-    let b = button::custom(widget::text(label.to_uppercase()).font(DISPLAY).size(18))
-        .padding([8, 16])
-        .class(theme::Button::Custom {
-            active: Box::new(move |_, _| button_style(accent, on, 0.0)),
-            hovered: Box::new(move |_, _| button_style(accent, true, 0.0)),
-            pressed: Box::new(move |_, _| button_style(accent, true, 0.0)),
-            // a disabled "on" button is the current choice: keep it filled
-            disabled: Box::new(move |_| {
-                let mut s = button_style(accent, on, 0.0);
-                if !on {
-                    s.text_color = Some(Color { a: 0.4, ..ink::pal().text });
-                }
-                s
-            }),
-        });
+    let b = button::custom(widget::text(label.to_uppercase()).font(DISPLAY).size(18)).padding([8, 16]).class(theme::Button::Custom {
+        active: Box::new(move |_, _| button_style(accent, on, 0.0)),
+        hovered: Box::new(move |_, _| button_style(accent, true, 0.0)),
+        pressed: Box::new(move |_, _| button_style(accent, true, 0.0)),
+        // a disabled "on" button is the current choice: keep it filled
+        disabled: Box::new(move |_| {
+            let mut s = button_style(accent, on, 0.0);
+            if !on {
+                s.text_color = Some(Color { a: 0.4, ..ink::pal().text });
+            }
+            s
+        }),
+    });
     let b = match msg {
         Some(m) => b.on_press(m),
         None => b,
     };
     // hard shadow lives on a wrapper (cosmic buttons have no blur-free shadow)
-    container(b)
-        .class(theme::Container::custom(|_| container::Style { shadow: shadow(4.0), ..Default::default() }))
-        .into()
+    container(b).class(theme::Container::custom(|_| container::Style { shadow: shadow(4.0), ..Default::default() })).into()
 }
 
 /// Clickable list row; highlighted when selected.
@@ -174,5 +169,8 @@ pub fn app_icon<'a, M: Clone + 'static>(icon: Option<&str>, size: u16) -> Elemen
 
 /// One of Ember's drawn glyphs as a widget, `h` px tall (theme foreground color).
 pub fn glyph_icon<'a, M: Clone + 'static>(g: crate::glyphs::Glyph, h: f32) -> Element<'a, M> {
-    widget::canvas(crate::glyphs::Icon { glyph: g, color: None }).width(cosmic::iced::Length::Fixed(h * g.aspect())).height(cosmic::iced::Length::Fixed(h)).into()
+    widget::canvas(crate::glyphs::Icon { glyph: g, color: None })
+        .width(cosmic::iced::Length::Fixed(h * g.aspect()))
+        .height(cosmic::iced::Length::Fixed(h))
+        .into()
 }

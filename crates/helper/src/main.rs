@@ -116,11 +116,7 @@ fn run(action: Action) -> Result<(), String> {
         Action::MaxPerf(p) => write(&Path::new(CPU).join("intel_pstate/max_perf_pct"), &p.to_string()),
         Action::Turbo(on) => {
             let pstate = Path::new(CPU).join("intel_pstate/no_turbo");
-            if pstate.exists() {
-                write(&pstate, if on { "0" } else { "1" })
-            } else {
-                write(&Path::new(CPU).join("cpufreq/boost"), if on { "1" } else { "0" })
-            }
+            if pstate.exists() { write(&pstate, if on { "0" } else { "1" }) } else { write(&Path::new(CPU).join("cpufreq/boost"), if on { "1" } else { "0" }) }
         }
         Action::Renice(p, n) => {
             // SAFETY: plain syscall with validated arguments

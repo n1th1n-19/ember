@@ -5,7 +5,7 @@ use cosmic::iced::widget::canvas::{Frame, Path, Stroke};
 use cosmic::iced::{Point, Rectangle, Size, Vector};
 use std::f32::consts::PI;
 
-use super::{darker, disc, ellipse_pts, fit, polyline, sub, Block};
+use super::{Block, darker, disc, ellipse_pts, fit, polyline, sub};
 use crate::ink::{self, CYAN, GREY, INK, PAPER, RED, WHITE, YELLOW};
 
 /// `level` 0..=3 from traffic; rx/tx light the incoming/outgoing packets.
@@ -112,7 +112,15 @@ pub fn draw(f: &mut Frame, r: Rectangle, level: u8, rx: bool, tx: bool, pose: u6
     ink::boxed(f, win, if rx || tx { YELLOW } else { darker(GREY, 0.7) }, 2.0, 0.0);
     f.stroke(&Path::line(Point::new(win.center_x(), win.y), Point::new(win.center_x(), win.y + win.height)), ink::stroke(1.5));
     // cable shed → tower foot
-    polyline(f, &[Point::new(shed.front.x, shed.front.y + shed.front.height * 0.3), Point::new(fr.x + 8.0, ground_y - r.height * 0.06), Point::new(fr.x, ground_y - 4.0)], ink::stroke(2.0));
+    polyline(
+        f,
+        &[
+            Point::new(shed.front.x, shed.front.y + shed.front.height * 0.3),
+            Point::new(fr.x + 8.0, ground_y - r.height * 0.06),
+            Point::new(fr.x, ground_y - 4.0),
+        ],
+        ink::stroke(2.0),
+    );
 
     // packets: envelopes flying down (rx, cyan) and up (tx, red)
     let envelope = |f: &mut Frame, c: Point, color| {

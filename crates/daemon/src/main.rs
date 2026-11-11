@@ -4,7 +4,7 @@
 //! desktop notification when one fires. Runs as the systemd user unit `ember.service`.
 use std::time::{Duration, Instant};
 
-use ember_core::alerts::{should_fire, AlertState, Metric, Rule};
+use ember_core::alerts::{AlertState, Metric, Rule, should_fire};
 use ember_core::history::{self, Record, Writer};
 use ember_core::series::Series;
 use ember_core::{Sampler, Snapshot};
@@ -38,13 +38,7 @@ fn notify(m: Metric, v: f32) {
         Metric::CpuTemp => (format!("CPU at {v:.0}°C"), "TOO HOT! Check vents and what's running.", Urgency::Critical),
         Metric::BatteryLow => (format!("Battery at {v:.0}%"), "PLINK! Plug in soon.", Urgency::Critical),
     };
-    let sent = Notification::new()
-        .appname("Ember")
-        .summary(&summary)
-        .body(body)
-        .icon("io.github.n1th1n_19.Ember")
-        .urgency(urgency)
-        .show();
+    let sent = Notification::new().appname("Ember").summary(&summary).body(body).icon("io.github.n1th1n_19.Ember").urgency(urgency).show();
     if let Err(e) = sent {
         eprintln!("emberd: notification failed: {e}");
     }

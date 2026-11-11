@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Processes, Services and Control pages: real widgets, async actions, status banner.
+use cosmic::Element;
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, column, row};
-use cosmic::Element;
 use ember_core::control::power::{self, PowerState, Profile};
 use ember_core::control::procs::{self, ProcRow, Procs, Signal};
 use ember_core::control::services::{self, Action, Scope, Unit};
-use ember_core::control::{cpu, CtlResult};
+use ember_core::control::{CtlResult, cpu};
 use ember_core::fans::Fan;
-use ember_ui::ink::{bytes, CYAN, MAGENTA, RED, YELLOW};
+use ember_ui::ink::{CYAN, MAGENTA, RED, YELLOW, bytes};
 
-use ember_ui::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 use crate::Message;
+use ember_ui::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sort {
@@ -228,7 +228,11 @@ impl Controls {
 
     pub fn view_processes(&self) -> Element<'_, Message> {
         let q = self.proc_search.to_lowercase();
-        let mut rows: Vec<&ProcRow> = self.rows.iter().filter(|r| q.is_empty() || r.name.to_lowercase().contains(&q) || r.cmd.to_lowercase().contains(&q) || r.pid.to_string() == q).collect();
+        let mut rows: Vec<&ProcRow> = self
+            .rows
+            .iter()
+            .filter(|r| q.is_empty() || r.name.to_lowercase().contains(&q) || r.cmd.to_lowercase().contains(&q) || r.pid.to_string() == q)
+            .collect();
         match self.sort {
             Sort::Cpu => rows.sort_by(|a, b| b.cpu.total_cmp(&a.cpu)),
             Sort::Memory => rows.sort_by_key(|r| std::cmp::Reverse(r.mem)),
@@ -239,7 +243,11 @@ impl Controls {
         let tools = row::with_capacity(8)
             .spacing(12)
             .align_y(Alignment::Center)
-            .push(widget::text_input::search_input("Search name, command or PID", &self.proc_search).on_input(|s| Message::Ctl(Msg::ProcSearch(s))).width(Length::Fixed(320.0)))
+            .push(
+                widget::text_input::search_input("Search name, command or PID", &self.proc_search)
+                    .on_input(|s| Message::Ctl(Msg::ProcSearch(s)))
+                    .width(Length::Fixed(320.0)),
+            )
             .push(sort_btn("CPU", Sort::Cpu))
             .push(sort_btn("Memory", Sort::Memory))
             .push(sort_btn("Name", Sort::Name))
@@ -304,14 +312,17 @@ impl Controls {
 
     pub fn view_services(&self) -> Element<'_, Message> {
         let q = self.svc_search.to_lowercase();
-        let units: Vec<&Unit> = self.units.iter().filter(|u| q.is_empty() || u.name.to_lowercase().contains(&q) || u.description.to_lowercase().contains(&q)).collect();
+        let units: Vec<&Unit> =
+            self.units.iter().filter(|u| q.is_empty() || u.name.to_lowercase().contains(&q) || u.description.to_lowercase().contains(&q)).collect();
         let scope_btn = |label, s| comic_button(label, Some(Message::Ctl(Msg::SvcScope(s))), CYAN, self.scope == s);
         let tools = row::with_capacity(8)
             .spacing(12)
             .align_y(Alignment::Center)
             .push(scope_btn("My services", Scope::User))
             .push(scope_btn("System", Scope::System))
-            .push(widget::text_input::search_input("Search services", &self.svc_search).on_input(|s| Message::Ctl(Msg::SvcSearch(s))).width(Length::Fixed(320.0)))
+            .push(
+                widget::text_input::search_input("Search services", &self.svc_search).on_input(|s| Message::Ctl(Msg::SvcSearch(s))).width(Length::Fixed(320.0)),
+            )
             .push(muted(if self.units_loading { "Loading…".to_string() } else { format!("{} services", units.len()) }));
 
         let mut list = column::with_capacity(8).spacing(2);
@@ -331,9 +342,17 @@ impl Controls {
                 let enabled = u.file_state.as_deref() == Some("enabled");
                 let can_toggle = matches!(u.file_state.as_deref(), Some("enabled") | Some("disabled"));
                 let mut actions = row::with_capacity(8).spacing(10).align_y(Alignment::Center);
-                actions = if running { actions.push(act("Stop", Action::Stop, RED, true)).push(act("Restart", Action::Restart, YELLOW, true)) } else { actions.push(act("Start", Action::Start, YELLOW, true)) };
+                actions = if running {
+                    actions.push(act("Stop", Action::Stop, RED, true)).push(act("Restart", Action::Restart, YELLOW, true))
+                } else {
+                    actions.push(act("Start", Action::Start, YELLOW, true))
+                };
                 if can_toggle {
-                    actions = if enabled { actions.push(act("Disable at boot", Action::Disable, MAGENTA, false)) } else { actions.push(act("Enable at boot", Action::Enable, CYAN, false)) };
+                    actions = if enabled {
+                        actions.push(act("Disable at boot", Action::Disable, MAGENTA, false))
+                    } else {
+                        actions.push(act("Enable at boot", Action::Enable, CYAN, false))
+                    };
                 }
                 if u.scope == Scope::System {
                     actions = actions.push(muted("System changes ask for your password."));
@@ -360,13 +379,26 @@ impl Controls {
         // power profile + graphics + charge (system76-power)
         match &self.power {
             None if !self.power_loaded => col = col.push(card(muted("Reading power settings…"))),
-            None => col = col.push(card(column::with_capacity(8).spacing(8).push(heading("Power")).push(muted("system76-power isn't running, so power profile and graphics switching aren't available.")))),
+            None => {
+                col = col.push(card(
+                    column::with_capacity(8)
+                        .spacing(8)
+                        .push(heading("Power"))
+                        .push(muted("system76-power isn't running, so power profile and graphics switching aren't available.")),
+                ))
+            }
             Some(p) => {
                 let mut prof = row::with_capacity(8).spacing(12);
                 for pr in Profile::ALL {
                     prof = prof.push(comic_button(pr.name(), Some(Message::Ctl(Msg::SetProfile(pr))), YELLOW, p.profile == Some(pr)));
                 }
-                col = col.push(card(column::with_capacity(8).spacing(12).push(heading("Power profile")).push(muted("Battery saves power, Performance unlocks full clocks and fans.")).push(prof)));
+                col = col.push(card(
+                    column::with_capacity(8)
+                        .spacing(12)
+                        .push(heading("Power profile"))
+                        .push(muted("Battery saves power, Performance unlocks full clocks and fans."))
+                        .push(prof),
+                ));
 
                 if p.switchable {
                     let mut g = row::with_capacity(8).spacing(12);
@@ -398,7 +430,10 @@ impl Controls {
 
         // CPU scaling (helper)
         let c = &self.cpu;
-        let mut cpu_col = column::with_capacity(8).spacing(12).push(heading("CPU")).push(muted(format!("Driver {} · changes ask for your password", c.driver.clone().unwrap_or_else(|| "--".into()))));
+        let mut cpu_col = column::with_capacity(8)
+            .spacing(12)
+            .push(heading("CPU"))
+            .push(muted(format!("Driver {} · changes ask for your password", c.driver.clone().unwrap_or_else(|| "--".into()))));
         if !c.governors.is_empty() {
             let mut g = row::with_capacity(8).spacing(12).align_y(Alignment::Center).push(body("Governor"));
             for gov in &c.governors {

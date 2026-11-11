@@ -4,14 +4,14 @@
 use cosmic::iced::advanced::text::Alignment;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::{self, Frame, Geometry};
-use cosmic::iced::{mouse, Color, Point, Rectangle, Size};
+use cosmic::iced::{Color, Point, Rectangle, Size, mouse};
 use cosmic::{Renderer, Theme};
 use ember_ui::{
     art, chart,
-    ink::{self, bytes, opt, Level, BODY, CYAN, DISPLAY, GREY, INK, MAGENTA, PAPER, RED, WHITE, YELLOW},
+    ink::{self, BODY, CYAN, DISPLAY, GREY, INK, Level, MAGENTA, PAPER, RED, WHITE, YELLOW, bytes, opt},
 };
 
-use crate::{App, Message, Page, BURST_POSES};
+use crate::{App, BURST_POSES, Message, Page};
 
 pub struct View<'a> {
     pub app: &'a App,
@@ -107,7 +107,9 @@ fn frame(f: &mut Frame, b: Rectangle, d: &Detail, pose: u64) -> (Rectangle, Rect
     ink::boxed(f, art, ink::ground(d.ground), 4.0, 5.0);
     // decorative halftone in the art box corner (no text sits on it)
     let corner = Rectangle::new(Point::new(art.x + art.width * 0.45, art.y), Size::new(art.width * 0.55, art.height * 0.5));
-    ink::halftone_where(f, ink::inset(corner, 4.0), if pal.dark { Color { a: 0.55, ..d.ground } } else { Color { a: 0.22, ..INK } }, 12.0, 0.6, |q| (q.x - corner.x) > (q.y - corner.y) * 0.8);
+    ink::halftone_where(f, ink::inset(corner, 4.0), if pal.dark { Color { a: 0.55, ..d.ground } } else { Color { a: 0.22, ..INK } }, 12.0, 0.6, |q| {
+        (q.x - corner.x) > (q.y - corner.y) * 0.8
+    });
 
     let right = if narrow {
         Rectangle::new(Point::new(upper.x, art.y + art.height + 22.0), Size::new(upper.width, upper.height - art.height - 22.0))
@@ -139,10 +141,7 @@ fn fit_size(s: &str, width: f32, size: f32) -> f32 {
 
 fn split_v(r: Rectangle, top_frac: f32, gap: f32) -> (Rectangle, Rectangle) {
     let h = (r.height - gap) * top_frac;
-    (
-        Rectangle::new(r.position(), Size::new(r.width, h)),
-        Rectangle::new(Point::new(r.x, r.y + h + gap), Size::new(r.width, r.height - h - gap)),
-    )
+    (Rectangle::new(r.position(), Size::new(r.width, h)), Rectangle::new(Point::new(r.x, r.y + h + gap), Size::new(r.width, r.height - h - gap)))
 }
 
 fn chart_label(f: &mut Frame, r: Rectangle, s: &str) -> Rectangle {
@@ -309,10 +308,8 @@ fn temps(f: &mut Frame, b: Rectangle, a: &App) {
         burst: burst_age(a, a.bursts.temp).map(|age| ("TOO HOT", age)),
     };
     let (art_r, charts) = frame(f, b, &d, a.anim());
-    let gauges: Vec<_> = groups
-        .iter()
-        .map(|g| art::temp::Gauge { label: g.name.to_string(), celsius: g.celsius, critical: g.critical.unwrap_or(100.0) })
-        .collect();
+    let gauges: Vec<_> =
+        groups.iter().map(|g| art::temp::Gauge { label: g.name.to_string(), celsius: g.celsius, critical: g.critical.unwrap_or(100.0) }).collect();
     art::temp::draw(f, art_r, &gauges, a.anim());
     let (top, bot) = split_v(charts, 0.3, 18.0);
     let cells: Vec<_> = groups.iter().map(|g| (g.name.to_string(), g.celsius, g.critical.unwrap_or(100.0))).collect();
@@ -345,7 +342,14 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
     let (top, bot) = split_v(charts, 0.55, 18.0);
     let top = chart_label(f, top, "Health and power");
     let r = (top.height / 2.0).min(top.width / 5.0);
-    chart::ring(f, Point::new(top.x + r + 6.0, top.y + top.height / 2.0), r, bat.and_then(|b| b.health).unwrap_or(0.0), CYAN, &opt(bat.and_then(|b| b.health), |h| format!("{:.0}%", h * 100.0)));
+    chart::ring(
+        f,
+        Point::new(top.x + r + 6.0, top.y + top.height / 2.0),
+        r,
+        bat.and_then(|b| b.health).unwrap_or(0.0),
+        CYAN,
+        &opt(bat.and_then(|b| b.health), |h| format!("{:.0}%", h * 100.0)),
+    );
     let w = bat.and_then(|b| b.power_w).unwrap_or(0.0);
     chart::gauge(f, Point::new(top.x + r * 2.0 + 40.0 + r * 1.2, top.y + top.height * 0.85), r * 1.2, w / 60.0, &format!("{w:.0} W"));
     let lr = chart_label(f, bot, &format!("Charge · {}", a.range_label()));
@@ -360,7 +364,10 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
         ground: CYAN,
         label: lead.map_or("GPU", |g| g.vendor),
         big: lead.map_or_else(|| "OFF".into(), |g| g.usage.map_or_else(|| opt(g.cur_mhz, |m| format!("{m}")), |u| format!("{u:.0}%"))),
-        sub: lead.map_or_else(|| "No GPU driver loaded".into(), |g| if g.usage.is_some() { "usage".into() } else { format!("MHz now (max {})", opt(g.max_mhz, |m| m.to_string())) }),
+        sub: lead.map_or_else(
+            || "No GPU driver loaded".into(),
+            |g| if g.usage.is_some() { "usage".into() } else { format!("MHz now (max {})", opt(g.max_mhz, |m| m.to_string())) },
+        ),
         details: gpus
             .iter()
             .map(|g| (g.vendor, g.driver.as_ref().map_or_else(|| "switched off".into(), |d| format!("{d} · {}", opt(g.cur_mhz, |m| format!("{m} MHz"))))))
@@ -374,7 +381,14 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
     for (i, g) in gpus.iter().enumerate() {
         let r = Rectangle::new(Point::new(art_r.x, art_r.y + i as f32 * h), Size::new(art_r.width, h - 10.0));
         let speed = g.usage.map(|u| u / 100.0).or_else(|| Some(g.cur_mhz? as f32 / g.max_mhz? as f32)).unwrap_or(0.0);
-        art::gpu::draw(f, Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)), g.driver.is_some(), speed, g.usage.is_some_and(|u| u > 85.0), a.anim());
+        art::gpu::draw(
+            f,
+            Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)),
+            g.driver.is_some(),
+            speed,
+            g.usage.is_some_and(|u| u > 85.0),
+            a.anim(),
+        );
         let note = if g.driver.is_some() { g.name.clone() } else { format!("{} · switched off (integrated mode)", g.vendor) };
         ink::text(f, note, Point::new(r.center_x(), r.y + r.height - 4.0), 13.0, BODY, ink::pal().scene_line, Alignment::Center, Vertical::Bottom);
     }
@@ -395,7 +409,11 @@ fn fans(f: &mut Frame, b: Rectangle, a: &App) {
         label: "Fan speed",
         big: opt(top_rpm, |r| r.to_string()),
         sub: if fans.is_empty() { "Your firmware doesn't expose fan sensors".into() } else { "RPM".into() },
-        details: if fans.is_empty() { vec![("Fans", "none exposed".into())] } else { fans.iter().take(5).map(|f| ("Fan", format!("{} {}", f.label, opt(f.rpm, |r| format!("{r} rpm"))))).collect() },
+        details: if fans.is_empty() {
+            vec![("Fans", "none exposed".into())]
+        } else {
+            fans.iter().take(5).map(|f| ("Fan", format!("{} {}", f.label, opt(f.rpm, |r| format!("{r} rpm"))))).collect()
+        },
         body_values: false,
         burst: None,
     };
@@ -470,7 +488,11 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
             }
             Page::Temps => {
                 let groups = ember_core::temps::group(&s.temps);
-                let gauges: Vec<_> = groups.iter().take(3).map(|g| art::temp::Gauge { label: g.name.into(), celsius: g.celsius, critical: g.critical.unwrap_or(100.0) }).collect();
+                let gauges: Vec<_> = groups
+                    .iter()
+                    .take(3)
+                    .map(|g| art::temp::Gauge { label: g.name.into(), celsius: g.celsius, critical: g.critical.unwrap_or(100.0) })
+                    .collect();
                 art::temp::draw(f, art_r, &gauges, pose);
                 ("TEMPS", opt(s.cpu_temp(), |c| format!("{c:.0}°")), "CPU".into(), Some(&a.hist().cpu_temp), 100.0, RED)
             }
@@ -478,7 +500,14 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                 let bat = s.batteries.first();
                 let charging = bat.and_then(|b| b.status.as_deref()) == Some("Charging");
                 art::battery::draw(f, art_r, bat.and_then(|b| b.percent), charging, pose);
-                ("BATTERY", opt(bat.and_then(|b| b.percent), |p| format!("{p:.0}%")), bat.and_then(|b| b.status.clone()).unwrap_or_else(|| "--".into()), Some(&a.hist().battery), 100.0, YELLOW)
+                (
+                    "BATTERY",
+                    opt(bat.and_then(|b| b.percent), |p| format!("{p:.0}%")),
+                    bat.and_then(|b| b.status.clone()).unwrap_or_else(|| "--".into()),
+                    Some(&a.hist().battery),
+                    100.0,
+                    YELLOW,
+                )
             }
             _ => {
                 let (rx, tx) = (s.net_rx.unwrap_or(0.0), s.net_tx.unwrap_or(0.0));
@@ -506,6 +535,12 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
             let ch = Rectangle::new(Point::new(num_r.x, top), Size::new(num_r.width - 6.0, (num_r.y + num_r.height - top - 6.0).max(30.0)));
             chart::area(f, ch, series, max, color);
         }
-        ink::caption(f, Point::new(r.x - 8.0, r.y - 16.0), title, 22.0, if page == Page::Temps && s.cpu_temp().is_some_and(|c| c > 80.0) { RED } else { YELLOW });
+        ink::caption(
+            f,
+            Point::new(r.x - 8.0, r.y - 16.0),
+            title,
+            22.0,
+            if page == Page::Temps && s.cpu_temp().is_some_and(|c| c > 80.0) { RED } else { YELLOW },
+        );
     }
 }

@@ -17,6 +17,8 @@ fn main() {
     let trash = home.join(".local/share/Trash");
     let _ = std::fs::remove_file(trash.join("files/ember-selftest.AppImage"));
     let _ = std::fs::remove_file(trash.join("info/ember-selftest.AppImage.trashinfo"));
-    if created_dir { let _ = std::fs::remove_dir(&dir); }
+    if created_dir {
+        let _ = std::fs::remove_dir(&dir);
+    }
     println!("cleaned up");
 }

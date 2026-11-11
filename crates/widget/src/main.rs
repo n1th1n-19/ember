@@ -9,17 +9,17 @@ use std::time::Duration;
 
 use cosmic::app::{Core, Settings, Task};
 use cosmic::cctk::sctk::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
-use cosmic::cosmic_config::{config_subscription, CosmicConfigEntry};
+use cosmic::cosmic_config::{CosmicConfigEntry, config_subscription};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{IcedMargin, IcedOutput, SctkLayerSurfaceSettings};
 use cosmic::iced::platform_specific::shell::commands::layer_surface::{set_anchor, set_layer, set_margin, set_size};
 use cosmic::iced::widget::canvas::{self, Frame, Geometry};
 use cosmic::iced::window::Id;
-use cosmic::iced::{mouse, Length, Limits, Point, Rectangle, Size, Subscription};
+use cosmic::iced::{Length, Limits, Point, Rectangle, Size, Subscription, mouse};
 use cosmic::surface::action::app_layer_shell;
 use cosmic::{Element, Renderer, Theme};
 use ember_core::{Sampler, Snapshot};
-use ember_ui::ink;
 use ember_ui::config::{Corner, EmberConfig};
+use ember_ui::ink;
 use ember_ui::mini::{self, Key};
 
 const ID: &str = "io.github.n1th1n_19.Ember.Widget";
@@ -52,7 +52,9 @@ impl canvas::Program<Message, Theme, Renderer> for Card<'_> {
 
     fn update(&self, _: &mut (), event: &canvas::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
         match event {
-            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) if cursor.is_over(bounds) => Some(canvas::Action::publish(Message::Open).and_capture()),
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) if cursor.is_over(bounds) => {
+                Some(canvas::Action::publish(Message::Open).and_capture())
+            }
             _ => None,
         }
     }
@@ -113,18 +115,18 @@ impl cosmic::Application for Widget {
                 let id = Id::unique();
                 state.surface = Some(id);
                 SctkLayerSurfaceSettings {
-                id,
-                layer,
-                keyboard_interactivity: KeyboardInteractivity::None,
-                anchor,
-                output: IcedOutput::Active,
-                namespace: "ember-widget".into(),
-                margin,
-                size: Some((Some(W), Some(h))),
-                exclusive_zone: 0,
-                size_limits: Limits::NONE.min_width(1.0).min_height(1.0).max_width(W as f32).max_height(height(Key::ALL.len()) as f32),
-                ..Default::default()
-            }
+                    id,
+                    layer,
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    anchor,
+                    output: IcedOutput::Active,
+                    namespace: "ember-widget".into(),
+                    margin,
+                    size: Some((Some(W), Some(h))),
+                    exclusive_zone: 0,
+                    size_limits: Limits::NONE.min_width(1.0).min_height(1.0).max_width(W as f32).max_height(height(Key::ALL.len()) as f32),
+                    ..Default::default()
+                }
             },
             Some(Box::new(|state: &Widget| Element::from(state.card()).map(cosmic::Action::App))),
         );

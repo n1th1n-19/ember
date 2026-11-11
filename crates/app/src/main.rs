@@ -5,14 +5,13 @@ mod controls;
 mod pages;
 mod settings;
 
-
 use std::time::Duration;
 
 use cosmic::app::{Settings, Task};
 use cosmic::iced::{Length, Size, Subscription};
 use cosmic::widget::{self, canvas, nav_bar};
 use cosmic::{Core, Element};
-use ember_core::{series::Series, Sampler, Snapshot};
+use ember_core::{Sampler, Snapshot, series::Series};
 use ember_ui::ink::{Level, POSE_MS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,7 +110,7 @@ impl History {
 
     /// 1-hour history from emberd's file (empty if the daemon isn't running).
     fn from_file() -> Self {
-        use ember_core::history::{read_last, default_path, Field, KEEP};
+        use ember_core::history::{Field, KEEP, default_path, read_last};
         let mut h = Self::new(KEEP);
         for r in default_path().and_then(|p| read_last(&p, KEEP).ok()).unwrap_or_default() {
             h.cpu.push(r.get(Field::Cpu));
@@ -263,7 +262,24 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: ember_ui::quick::Quick::default(), preview: None };
+        let mut app = App {
+            core,
+            nav,
+            page: start,
+            sampler,
+            snap,
+            hist_short,
+            hist_long: if long { History::from_file() } else { History::new(1) },
+            long_range: long,
+            samples: 0,
+            pose: 0,
+            bursts: Bursts::default(),
+            ctl: controls::Controls::default(),
+            apps: apps_page::Apps::default(),
+            settings: settings::Settings::load(),
+            quick: ember_ui::quick::Quick::default(),
+            preview: None,
+        };
         app.open(start);
         app.preview = preview_arg();
         if let Some(s) = app.preview {
@@ -346,7 +362,15 @@ impl cosmic::Application for App {
     fn view(&self) -> Element<'_, Message> {
         if let Some(s) = self.preview {
             let body = cosmic::widget::container(self.quick.section(s).map(Message::Quick)).padding(14).width(cosmic::iced::Length::Fixed(440.0));
-            return cosmic::widget::container(cosmic::widget::scrollable(body)).padding(20).width(cosmic::iced::Length::Fill).height(cosmic::iced::Length::Fill).class(cosmic::theme::Container::custom(|_| cosmic::widget::container::Style { background: Some(cosmic::iced::Background::Color(ember_ui::ink::pal().page)), ..Default::default() })).into();
+            return cosmic::widget::container(cosmic::widget::scrollable(body))
+                .padding(20)
+                .width(cosmic::iced::Length::Fill)
+                .height(cosmic::iced::Length::Fill)
+                .class(cosmic::theme::Container::custom(|_| cosmic::widget::container::Style {
+                    background: Some(cosmic::iced::Background::Color(ember_ui::ink::pal().page)),
+                    ..Default::default()
+                }))
+                .into();
         }
         match self.page {
             Page::Processes => return self.ctl.view_processes(),
@@ -397,5 +421,8 @@ fn main() -> cosmic::iced::Result {
         .and_then(|name| Page::ALL.into_iter().find(|p| p.name().eq_ignore_ascii_case(name) || (name == "temps" && *p == Page::Temps)))
         .unwrap_or(Page::Overview);
     let long = args.windows(2).any(|w| w[0] == "--range" && w[1] == "1h");
-    cosmic::app::run::<App>(Settings::default().size(Size::new(1180.0, 800.0)).size_limits(cosmic::iced::Limits::NONE.min_width(720.0).min_height(560.0)), (start, long))
+    cosmic::app::run::<App>(
+        Settings::default().size(Size::new(1180.0, 800.0)).size_limits(cosmic::iced::Limits::NONE.min_width(720.0).min_height(560.0)),
+        (start, long),
+    )
 }

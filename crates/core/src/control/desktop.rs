@@ -10,7 +10,11 @@ fn err(e: zbus::Error) -> String {
     }
 }
 
-#[zbus::proxy(interface = "com.system76.CosmicSettingsDaemon", default_service = "com.system76.CosmicSettingsDaemon", default_path = "/com/system76/CosmicSettingsDaemon")]
+#[zbus::proxy(
+    interface = "com.system76.CosmicSettingsDaemon",
+    default_service = "com.system76.CosmicSettingsDaemon",
+    default_path = "/com/system76/CosmicSettingsDaemon"
+)]
 trait SettingsDaemon {
     #[zbus(property)]
     fn display_brightness(&self) -> zbus::Result<i32>;

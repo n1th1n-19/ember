@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Apps page: every installed app from every source; uninstall, hide/disable, or copy
 //! the command when a button isn't safe or possible.
+use cosmic::Element;
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, column, row};
-use cosmic::Element;
 use ember_core::apps::{self, App, Plan, Source};
 use ember_core::control::CtlResult;
-use ember_ui::ink::{bytes, CYAN, MAGENTA, RED, YELLOW};
+use ember_ui::ink::{CYAN, MAGENTA, RED, YELLOW, bytes};
 
-use ember_ui::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 use crate::Message;
+use ember_ui::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -162,7 +162,12 @@ impl Apps {
         }
 
         let count = |s: Option<Source>| self.apps.iter().filter(|a| s.is_none_or(|s| a.source == s)).count();
-        let mut chips = row::with_capacity(10).spacing(10).push(comic_button(&format!("All {}", count(None)), Some(Message::Apps(Msg::Filter(None))), YELLOW, self.filter.is_none()));
+        let mut chips = row::with_capacity(10).spacing(10).push(comic_button(
+            &format!("All {}", count(None)),
+            Some(Message::Apps(Msg::Filter(None))),
+            YELLOW,
+            self.filter.is_none(),
+        ));
         for s in Source::ALL {
             let n = count(Some(s));
             if n > 0 {
@@ -175,7 +180,11 @@ impl Apps {
             .push(widget::text_input::search_input("Search apps", &self.search).on_input(|s| Message::Apps(Msg::Search(s))).width(Length::Fixed(320.0)))
             .push(comic_button("By name", Some(Message::Apps(Msg::BySize(false))), MAGENTA, !self.by_size))
             .push(comic_button("By size", Some(Message::Apps(Msg::BySize(true))), MAGENTA, self.by_size))
-            .push(muted(if self.loading { "Scanning APT, Flatpak, Snap, AppImages, cargo, npm, bun…".to_string() } else { format!("{} shown", shown.len()) }));
+            .push(muted(if self.loading {
+                "Scanning APT, Flatpak, Snap, AppImages, cargo, npm, bun…".to_string()
+            } else {
+                format!("{} shown", shown.len())
+            }));
 
         let header = row::with_capacity(5)
             .spacing(10)
@@ -244,7 +253,11 @@ impl Apps {
             if let Some(why) = &p.blocked {
                 confirm = confirm.push(banner(why, true));
             } else if !p.removes.is_empty() {
-                let what = if p.removes.len() > 1 { format!("This removes {} items: {}", p.removes.len(), p.removes.join(", ")) } else { format!("This removes {}.", p.removes[0]) };
+                let what = if p.removes.len() > 1 {
+                    format!("This removes {} items: {}", p.removes.len(), p.removes.join(", "))
+                } else {
+                    format!("This removes {}.", p.removes[0])
+                };
                 confirm = confirm.push(body(what));
             }
             confirm = confirm.push(

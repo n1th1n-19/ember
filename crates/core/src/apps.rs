@@ -245,7 +245,13 @@ pub fn parse_snap(out: &str) -> Vec<App> {
             let c: Vec<&str> = l.split_whitespace().collect();
             let (name, version) = (*c.first()?, *c.get(1)?);
             let notes = c.get(5).copied().unwrap_or("");
-            if notes.contains("base") || notes.contains("core") || notes.contains("snapd") || name == "snapd" || name.starts_with("gtk-common-themes") || name.starts_with("gnome-") && name.contains("-2") {
+            if notes.contains("base")
+                || notes.contains("core")
+                || notes.contains("snapd")
+                || name == "snapd"
+                || name.starts_with("gtk-common-themes")
+                || name.starts_with("gnome-") && name.contains("-2")
+            {
                 return None;
             }
             Some(App {
@@ -297,7 +303,18 @@ pub fn parse_bun(out: &str) -> Vec<App> {
 }
 
 fn global(source: Source, name: &str, version: Option<String>) -> App {
-    App { name: name.to_string(), source, id: name.to_string(), version, size: None, desktop: None, path: None, user: true, disabled: false, icon: Some("utilities-terminal".into()) }
+    App {
+        name: name.to_string(),
+        source,
+        id: name.to_string(),
+        version,
+        size: None,
+        desktop: None,
+        path: None,
+        user: true,
+        disabled: false,
+        icon: Some("utilities-terminal".into()),
+    }
 }
 
 /// ELF with the AppImage magic at offset 8 ("AI" + type 1 or 2).
@@ -328,7 +345,12 @@ pub fn list() -> Vec<App> {
     let owners = if sys.is_empty() { HashMap::new() } else { parse_dpkg_s(&run_lossy("dpkg", &["-S"], &sys)) };
     let pkgs = run("dpkg-query", &["-W", "-f", "${Package}\t${Version}\t${Installed-Size}\n"]).map(|o| parse_dpkg_query(&o)).unwrap_or_default();
 
-    let flatpaks: HashMap<String, App> = run("flatpak", &["list", "--app", "--columns=application,name,version,installation,size"]).map(|o| parse_flatpak(&o)).unwrap_or_default().into_iter().map(|a| (a.id.clone(), a)).collect();
+    let flatpaks: HashMap<String, App> = run("flatpak", &["list", "--app", "--columns=application,name,version,installation,size"])
+        .map(|o| parse_flatpak(&o))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| (a.id.clone(), a))
+        .collect();
     let mut flat_seen = HashSet::new();
     let snaps: HashMap<String, App> = run("snap", &["list"]).map(|o| parse_snap(&o)).unwrap_or_default().into_iter().map(|a| (a.id.clone(), a)).collect();
     let mut snap_seen = HashSet::new();
@@ -339,7 +361,18 @@ pub fn list() -> Vec<App> {
         let ps = path.display().to_string();
         let exec_bin = d.exec.split_whitespace().next().unwrap_or("").trim_matches('"').to_string();
         let icon = (!d.icon.is_empty()).then(|| d.icon.clone());
-        let mut app = App { name: d.name.clone(), source: Source::Manual, id: ps.clone(), version: None, size: None, desktop: Some(path.clone()), path: None, user: true, disabled: d.no_display, icon: icon.clone() };
+        let mut app = App {
+            name: d.name.clone(),
+            source: Source::Manual,
+            id: ps.clone(),
+            version: None,
+            size: None,
+            desktop: Some(path.clone()),
+            path: None,
+            user: true,
+            disabled: d.no_display,
+            icon: icon.clone(),
+        };
 
         if ps.contains("/flatpak/exports/") {
             let Some(f) = flatpaks.get(&file_id).or_else(|| flatpaks.values().find(|f| file_id.starts_with(&f.id))) else { continue };
@@ -382,7 +415,18 @@ pub fn list() -> Vec<App> {
             for p in rd.flatten().map(|e| e.path()) {
                 if p.is_file() && !known.contains(&p) && file_is_appimage(&p) {
                     let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                    apps.push(App { name, source: Source::AppImage, id: p.display().to_string(), version: None, size: fs::metadata(&p).ok().map(|m| m.len()), desktop: None, path: Some(p), user: true, disabled: false, icon: None });
+                    apps.push(App {
+                        name,
+                        source: Source::AppImage,
+                        id: p.display().to_string(),
+                        version: None,
+                        size: fs::metadata(&p).ok().map(|m| m.len()),
+                        desktop: None,
+                        path: Some(p),
+                        user: true,
+                        disabled: false,
+                        icon: None,
+                    });
                 }
             }
         }
@@ -411,7 +455,22 @@ pub fn valid_pkg(name: &str) -> bool {
 
 /// Never removed by a button: the desktop, boot, package tooling, auth, Ember itself.
 pub fn is_protected(pkg: &str) -> bool {
-    const EXACT: [&str; 14] = ["apt", "dpkg", "sudo", "systemd", "polkitd", "pkexec", "libc6", "bash", "coreutils", "network-manager", "pop-desktop", "ubuntu-desktop", "ember", "init"];
+    const EXACT: [&str; 14] = [
+        "apt",
+        "dpkg",
+        "sudo",
+        "systemd",
+        "polkitd",
+        "pkexec",
+        "libc6",
+        "bash",
+        "coreutils",
+        "network-manager",
+        "pop-desktop",
+        "ubuntu-desktop",
+        "ember",
+        "init",
+    ];
     const PREFIX: [&str; 7] = ["cosmic-", "linux-", "systemd-", "libsystemd", "grub", "pop-", "xdg-desktop-portal"];
     EXACT.contains(&pkg) || PREFIX.iter().any(|p| pkg.starts_with(p))
 }
@@ -463,14 +522,21 @@ pub fn plan(app: &App) -> Plan {
             if !valid_pkg(&app.id) {
                 return Plan { removes: vec![], blocked: Some("Unusual package name.".into()), command, button: false };
             }
-            let sim = Command::new("apt-get").args(["-s", "remove", "--", &app.id]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            let sim = Command::new("apt-get")
+                .args(["-s", "remove", "--", &app.id])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default();
             let removes = parse_apt_sim(&sim);
             let mut bad: Vec<String> = removes.iter().filter(|p| is_protected(p)).cloned().collect();
             bad.extend(essential(&removes));
             bad.sort();
             bad.dedup();
             let blocked = if is_protected(&app.id) || !bad.is_empty() {
-                Some(format!("Part of the system ({}). Ember won't remove it with a button; the command is here if you really mean it.", if bad.is_empty() { app.id.clone() } else { bad.join(", ") }))
+                Some(format!(
+                    "Part of the system ({}). Ember won't remove it with a button; the command is here if you really mean it.",
+                    if bad.is_empty() { app.id.clone() } else { bad.join(", ") }
+                ))
             } else if removes.is_empty() {
                 Some("APT says nothing would be removed (already gone or held).".into())
             } else {
@@ -617,13 +683,17 @@ mod tests {
 
     #[test]
     fn desktop_entry_main_group_only() {
-        let d = parse_desktop("[Desktop Entry]\nName=GIMP\nName[de]=GIMP de\nExec=gimp %U\nType=Application\n[Desktop Action new]\nName=New Window\nNoDisplay=true\n");
+        let d = parse_desktop(
+            "[Desktop Entry]\nName=GIMP\nName[de]=GIMP de\nExec=gimp %U\nType=Application\n[Desktop Action new]\nName=New Window\nNoDisplay=true\n",
+        );
         assert_eq!((d.name.as_str(), d.exec.as_str(), d.no_display, d.app_type.as_str()), ("GIMP", "gimp %U", false, "Application"));
     }
 
     #[test]
     fn package_manager_outputs() {
-        let owners = parse_dpkg_s("firefox: /usr/share/applications/firefox.desktop\nlibreoffice-common, libreoffice-calc: /usr/share/applications/calc.desktop\ndiversion by foo from: /x\n");
+        let owners = parse_dpkg_s(
+            "firefox: /usr/share/applications/firefox.desktop\nlibreoffice-common, libreoffice-calc: /usr/share/applications/calc.desktop\ndiversion by foo from: /x\n",
+        );
         assert_eq!(owners["/usr/share/applications/firefox.desktop"], "firefox");
         assert_eq!(owners["/usr/share/applications/calc.desktop"], "libreoffice-common");
         assert!(!owners.contains_key("/x"));
@@ -636,18 +706,28 @@ mod tests {
         assert_eq!((f[0].name.as_str(), f[0].user, f[0].size), ("OBS Studio", true, Some(528_500_000)));
         assert_eq!((f[1].user, f[1].size), (false, Some(1_200_000_000)));
 
-        let s = parse_snap("Name  Version  Rev  Tracking  Publisher  Notes\nblender  5.3.0  7998  latest/stable  blenderfoundation**  classic\ncore22  20240111  1122  latest/stable  canonical**  base\nsnapd  2.61  21  latest/stable  canonical**  snapd\nold-app  1.0  3  latest/stable  someone  disabled\n");
+        let s = parse_snap(
+            "Name  Version  Rev  Tracking  Publisher  Notes\nblender  5.3.0  7998  latest/stable  blenderfoundation**  classic\ncore22  20240111  1122  latest/stable  canonical**  base\nsnapd  2.61  21  latest/stable  canonical**  snapd\nold-app  1.0  3  latest/stable  someone  disabled\n",
+        );
         assert_eq!(s.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["blender", "old-app"]);
         assert!(s[1].disabled);
 
         let c = parse_cargo("cargo-expand v1.0.127:\n    cargo-expand\nflutter_rust_bridge_codegen v2.12.0:\n    flutter_rust_bridge_codegen\n");
-        assert_eq!(c.iter().map(|a| (a.id.as_str(), a.version.as_deref())).collect::<Vec<_>>(), [("cargo-expand", Some("1.0.127")), ("flutter_rust_bridge_codegen", Some("2.12.0"))]);
+        assert_eq!(
+            c.iter().map(|a| (a.id.as_str(), a.version.as_deref())).collect::<Vec<_>>(),
+            [("cargo-expand", Some("1.0.127")), ("flutter_rust_bridge_codegen", Some("2.12.0"))]
+        );
 
-        let n = parse_npm("/home/u/.nvm/lib\n/home/u/.nvm/lib/node_modules/@usebruno/cli\n/home/u/.nvm/lib/node_modules/npm\n/home/u/.nvm/lib/node_modules/typescript\n");
+        let n = parse_npm(
+            "/home/u/.nvm/lib\n/home/u/.nvm/lib/node_modules/@usebruno/cli\n/home/u/.nvm/lib/node_modules/npm\n/home/u/.nvm/lib/node_modules/typescript\n",
+        );
         assert_eq!(n.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["@usebruno/cli", "typescript"]);
 
         let b = parse_bun("/home/u/.bun/install/global node_modules (3)\n├── @anthropic-ai/sdk@0.50.0\n└── prettier@3.3.3\n");
-        assert_eq!(b.iter().map(|a| (a.id.as_str(), a.version.as_deref())).collect::<Vec<_>>(), [("@anthropic-ai/sdk", Some("0.50.0")), ("prettier", Some("3.3.3"))]);
+        assert_eq!(
+            b.iter().map(|a| (a.id.as_str(), a.version.as_deref())).collect::<Vec<_>>(),
+            [("@anthropic-ai/sdk", Some("0.50.0")), ("prettier", Some("3.3.3"))]
+        );
     }
 
     #[test]
@@ -672,7 +752,18 @@ mod tests {
         assert_eq!(parse_apt_sim("NOTE: x\nRemv cowsay [3.03]\nRemv cowsay-off [3.03]\n"), ["cowsay", "cowsay-off"]);
         assert_eq!(quote("/a b/it's"), r"'/a b/it'\''s'");
         assert_eq!(quote("org.gimp.GIMP"), "org.gimp.GIMP");
-        let manual = App { name: "X".into(), source: Source::Manual, id: "x".into(), version: None, size: None, desktop: Some("/usr/share/applications/x.desktop".into()), path: None, user: false, disabled: false, icon: None };
+        let manual = App {
+            name: "X".into(),
+            source: Source::Manual,
+            id: "x".into(),
+            version: None,
+            size: None,
+            desktop: Some("/usr/share/applications/x.desktop".into()),
+            path: None,
+            user: false,
+            disabled: false,
+            icon: None,
+        };
         assert!(!plan(&manual).button);
         assert!(uninstall(&manual).is_err());
     }

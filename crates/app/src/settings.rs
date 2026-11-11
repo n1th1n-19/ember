@@ -6,16 +6,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use cosmic::Element;
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, column, row};
-use cosmic::Element;
 use ember_ui::config::{Corner, EmberConfig};
 use ember_ui::ink::{CYAN, MAGENTA, RED, YELLOW};
 use ember_ui::mini::Key;
 
-use ember_ui::widgets::{banner, body, caption, card, comic_button, heading, muted, page};
 use crate::Message;
+use ember_ui::widgets::{banner, body, caption, card, comic_button, heading, muted, page};
 
 pub const APPLET_ID: &str = "io.github.n1th1n_19.Ember.Applet";
 const WIDGET_DESKTOP: &str = "io.github.n1th1n_19.Ember.Widget.desktop";
@@ -110,7 +110,13 @@ fn start_widget() -> Result<(), String> {
     if widget_running() {
         return Ok(());
     }
-    Command::new(bin("ember-widget")).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(drop).map_err(|e| format!("couldn't start ember-widget: {e}"))
+    Command::new(bin("ember-widget"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("couldn't start ember-widget: {e}"))
 }
 
 fn stop_widget() {
@@ -159,11 +165,7 @@ pub fn edit_wings(text: &str, add: bool) -> Option<String> {
     // right wing starts after the first "], [" (multi-line) or "], [" inline
     let i = text.find("], [")?;
     let (head, tail) = text.split_at(i + 4);
-    if tail.trim_start().starts_with(']') {
-        Some(format!("{head}\n    {entry},\n{}", tail.trim_start()))
-    } else {
-        Some(format!("{head}\n    {entry},{tail}"))
-    }
+    if tail.trim_start().starts_with(']') { Some(format!("{head}\n    {entry},\n{}", tail.trim_start())) } else { Some(format!("{head}\n    {entry},{tail}")) }
 }
 
 // ---------- swapping COSMIC's panel applets for Ember's ----------
@@ -286,7 +288,10 @@ impl Settings {
             Msg::EmberApplets(on) => {
                 save = false;
                 self.status = Some(match set_ember_applets(on) {
-                    Ok(()) => (if on { "Ember's applets are in the panel. COSMIC's originals are one click away." } else { "COSMIC's own applets are back." }.into(), false),
+                    Ok(()) => (
+                        if on { "Ember's applets are in the panel. COSMIC's originals are one click away." } else { "COSMIC's own applets are back." }.into(),
+                        false,
+                    ),
                     Err(e) => (e, true),
                 });
             }
@@ -312,8 +317,22 @@ impl Settings {
         let look = column::with_capacity(4)
             .spacing(12)
             .push(heading("Look"))
-            .push(row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(body("Theme")).push(pick("Dark", Msg::Dark(true), YELLOW, c.dark)).push(pick("Light", Msg::Dark(false), YELLOW, !c.dark)))
-            .push(row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(body("Animation")).push(pick("On", Msg::Motion(true), YELLOW, c.motion)).push(pick("Off", Msg::Motion(false), YELLOW, !c.motion)))
+            .push(
+                row::with_capacity(3)
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(body("Theme"))
+                    .push(pick("Dark", Msg::Dark(true), YELLOW, c.dark))
+                    .push(pick("Light", Msg::Dark(false), YELLOW, !c.dark)),
+            )
+            .push(
+                row::with_capacity(3)
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(body("Animation"))
+                    .push(pick("On", Msg::Motion(true), YELLOW, c.motion))
+                    .push(pick("Off", Msg::Motion(false), YELLOW, !c.motion)),
+            )
             .push(muted("Off freezes every loop; the art still shows the current state."));
 
         let running = widget_running();
@@ -337,7 +356,11 @@ impl Settings {
                     .spacing(12)
                     .align_y(Alignment::Center)
                     .push(body(if running { "Running" } else { "Not running" }))
-                    .push(if running { comic_button("Stop", Some(msg(Msg::StopWidget)), RED, true) } else { comic_button("Start", Some(msg(Msg::StartWidget)), YELLOW, true) })
+                    .push(if running {
+                        comic_button("Stop", Some(msg(Msg::StopWidget)), RED, true)
+                    } else {
+                        comic_button("Start", Some(msg(Msg::StartWidget)), YELLOW, true)
+                    })
                     .push(body("Start at login"))
                     .push(pick("On", Msg::Autostart(true), YELLOW, autostart))
                     .push(pick("Off", Msg::Autostart(false), YELLOW, !autostart)),
@@ -357,7 +380,14 @@ impl Settings {
                     .push(widget::container(body(format!("From {edge} edge: {} px", c.widget_y))).width(Length::Fixed(210.0)))
                     .push(widget::slider(0..=1000, c.widget_y, |v| Message::Settings(Msg::Y(v))).on_release(msg(Msg::SaveOffsets)).width(Length::Fixed(360.0))),
             )
-            .push(row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(body("Float above windows")).push(pick("No", Msg::OnTop(false), CYAN, !c.widget_on_top)).push(pick("Yes", Msg::OnTop(true), CYAN, c.widget_on_top)))
+            .push(
+                row::with_capacity(3)
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(body("Float above windows"))
+                    .push(pick("No", Msg::OnTop(false), CYAN, !c.widget_on_top))
+                    .push(pick("Yes", Msg::OnTop(true), CYAN, c.widget_on_top)),
+            )
             .push(wkeys);
 
         let in_panel = in_panel();
@@ -369,7 +399,14 @@ impl Settings {
             .spacing(12)
             .push(heading("Panel applet"))
             .push(muted("Small ink meters in the top panel; click them for a popup with every reading."))
-            .push(row::with_capacity(3).spacing(12).align_y(Alignment::Center).push(body("Readings in top panel")).push(pick("Yes", Msg::Panel(true), YELLOW, in_panel)).push(pick("No", Msg::Panel(false), YELLOW, !in_panel)))
+            .push(
+                row::with_capacity(3)
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(body("Readings in top panel"))
+                    .push(pick("Yes", Msg::Panel(true), YELLOW, in_panel))
+                    .push(pick("No", Msg::Panel(false), YELLOW, !in_panel)),
+            )
             .push(
                 row::with_capacity(3)
                     .spacing(12)
@@ -393,7 +430,8 @@ impl Settings {
 mod tests {
     use super::*;
 
-    const REAL: &str = "Some(([\n    \"com.system76.CosmicAppList\",\n], [\n    \"com.system76.CosmicAppletTime\",\n    \"com.system76.CosmicAppletPower\",\n]))";
+    const REAL: &str =
+        "Some(([\n    \"com.system76.CosmicAppList\",\n], [\n    \"com.system76.CosmicAppletTime\",\n    \"com.system76.CosmicAppletPower\",\n]))";
 
     #[test]
     fn panel_wings_edit_roundtrip() {

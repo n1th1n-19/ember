@@ -3,7 +3,7 @@
 //! not allowed to touch falls back to ember-helper (root, via pkexec).
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System, UpdateKind, Users};
 
-use super::{helper, CtlResult};
+use super::{CtlResult, helper};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcRow {

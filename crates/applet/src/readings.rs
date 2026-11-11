@@ -4,17 +4,17 @@
 use std::time::Duration;
 
 use cosmic::app::{Core, Task};
+use cosmic::cosmic_config::{CosmicConfigEntry, config_subscription};
 use cosmic::iced::widget::canvas::{self, Frame, Geometry};
 use cosmic::iced::window::Id;
-use cosmic::iced::{mouse, Alignment, Length, Point, Rectangle, Subscription};
+use cosmic::iced::{Alignment, Length, Point, Rectangle, Subscription, mouse};
 use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, column, row};
 use cosmic::{Element, Renderer, Theme};
 use ember_core::control::power::{self, Profile};
 use ember_core::{Sampler, Snapshot};
-use ember_ui::ink;
-use cosmic::cosmic_config::{config_subscription, CosmicConfigEntry};
 use ember_ui::config::EmberConfig;
+use ember_ui::ink;
 use ember_ui::mini::{self, Key};
 
 const ID: &str = "io.github.n1th1n_19.Ember.Applet";
@@ -176,17 +176,26 @@ impl cosmic::Application for Applet {
                         let id = Id::unique();
                         state.popup = Some(id);
                         let mut s = state.core.applet.get_popup_settings(state.core.main_window_id().unwrap(), id, Some((360, 470)), None, None);
-                        s.positioner.anchor_rect = Rectangle { x: (bounds.x - offset.x) as i32, y: (bounds.y - offset.y) as i32, width: bounds.width as i32, height: bounds.height as i32 };
+                        s.positioner.anchor_rect = Rectangle {
+                            x: (bounds.x - offset.x) as i32,
+                            y: (bounds.y - offset.y) as i32,
+                            width: bounds.width as i32,
+                            height: bounds.height as i32,
+                        };
                         s
                     },
                     Some(Box::new(|state: &Applet| Element::from(state.core.applet.popup_container(state.popup_view())).map(cosmic::Action::App))),
                 ))
             });
 
-        let summary = keys.iter().map(|k| {
-            let r = mini::read(&self.snap, *k);
-            format!("{} {}", k.short(), r.value)
-        }).collect::<Vec<_>>().join("  ·  ");
+        let summary = keys
+            .iter()
+            .map(|k| {
+                let r = mini::read(&self.snap, *k);
+                format!("{} {}", k.short(), r.value)
+            })
+            .collect::<Vec<_>>()
+            .join("  ·  ");
         self.core.applet.applet_tooltip::<Message>(btn, summary, self.popup.is_some(), Message::Surface, None).into()
     }
 
@@ -205,7 +214,8 @@ impl Applet {
         let mut profiles = row::with_capacity(3).spacing(6);
         for p in Profile::ALL {
             let b = widget::button::text(p.name()).on_press(Message::SetProfile(p));
-            profiles = profiles.push(if self.profile == Some(p) { b.class(cosmic::theme::Button::Suggested) } else { b.class(cosmic::theme::Button::Standard) });
+            profiles =
+                profiles.push(if self.profile == Some(p) { b.class(cosmic::theme::Button::Suggested) } else { b.class(cosmic::theme::Button::Standard) });
         }
         let mut col = column::with_capacity(3).spacing(10).padding(8).align_x(Alignment::Center).push(card);
         if self.profile.is_some() {

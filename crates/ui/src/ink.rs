@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Comic print primitives: palette, fonts, panels, captions, textures, bursts.
 //! Rules (DESIGN.md): hard shadows, no blur/gradients, motion snaps to 83ms poses.
-use cosmic::iced::{Color, Font, Point, Radians, Rectangle, Size, Vector};
+use cosmic::iced::advanced::text::Alignment;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::canvas::{Frame, Path, Stroke, Text};
-use cosmic::iced::advanced::text::Alignment;
+use cosmic::iced::{Color, Font, Point, Radians, Rectangle, Size, Vector};
 use std::f32::consts::{PI, TAU};
 
 pub const INK: Color = rgb(0x11, 0x11, 0x11);
@@ -46,16 +46,7 @@ pub struct Palette {
     pub scene_line: Color,
 }
 
-pub const LIGHT: Palette = Palette {
-    dark: false,
-    page: PAPER,
-    panel: PAPER,
-    text: INK,
-    chart_bg: WHITE,
-    chart_line: INK,
-    track: PAPER,
-    scene_line: INK,
-};
+pub const LIGHT: Palette = Palette { dark: false, page: PAPER, panel: PAPER, text: INK, chart_bg: WHITE, chart_line: INK, track: PAPER, scene_line: INK };
 
 pub const DARK: Palette = Palette {
     dark: true,
@@ -116,10 +107,22 @@ pub enum Level {
 
 impl Level {
     pub fn from_percent(p: f32) -> Self {
-        if p > 85.0 { Level::Hot } else if p >= 50.0 { Level::Busy } else { Level::Calm }
+        if p > 85.0 {
+            Level::Hot
+        } else if p >= 50.0 {
+            Level::Busy
+        } else {
+            Level::Calm
+        }
     }
     pub fn from_celsius(c: f32) -> Self {
-        if c > 80.0 { Level::Hot } else if c >= 60.0 { Level::Busy } else { Level::Calm }
+        if c > 80.0 {
+            Level::Hot
+        } else if c >= 60.0 {
+            Level::Busy
+        } else {
+            Level::Calm
+        }
     }
     pub fn color(self) -> Color {
         match self {
@@ -168,21 +171,18 @@ pub fn panel(f: &mut Frame, r: Rectangle, ground: Color) {
 
 #[allow(clippy::too_many_arguments)]
 pub fn text(f: &mut Frame, s: impl Into<String>, at: Point, size: f32, font: Font, color: Color, align: Alignment, valign: Vertical) {
-    f.fill_text(Text {
-        content: s.into(),
-        position: at,
-        size: size.into(),
-        font,
-        color,
-        align_x: align,
-        align_y: valign,
-        ..Text::default()
-    });
+    f.fill_text(Text { content: s.into(), position: at, size: size.into(), font, color, align_x: align, align_y: valign, ..Text::default() });
 }
 
 /// Rough advance width for layout of boxes around text (Bangers is narrow).
 pub fn approx_width(s: &str, size: f32, font: Font) -> f32 {
-    let em = if font == DISPLAY { 0.46 } else if font == MARKER { 0.62 } else { 0.56 };
+    let em = if font == DISPLAY {
+        0.46
+    } else if font == MARKER {
+        0.62
+    } else {
+        0.56
+    };
     s.chars().count() as f32 * size * em
 }
 
@@ -290,8 +290,26 @@ pub fn speed_lines(f: &mut Frame, c: Point, r_in: f32, r_out: f32, n: usize, pos
 /// `age` = poses since the burst started: sfx-pop over 4 poses, then holds.
 pub fn burst(f: &mut Frame, c: Point, r: f32, word: &str, age: u64) {
     const PTS: [(f32, f32); 20] = [
-        (50., 0.), (61., 18.), (82., 6.), (78., 29.), (100., 30.), (84., 47.), (98., 64.), (76., 66.), (80., 90.), (60., 78.),
-        (50., 100.), (40., 78.), (20., 90.), (24., 66.), (2., 64.), (16., 47.), (0., 30.), (22., 29.), (18., 6.), (39., 18.),
+        (50., 0.),
+        (61., 18.),
+        (82., 6.),
+        (78., 29.),
+        (100., 30.),
+        (84., 47.),
+        (98., 64.),
+        (76., 66.),
+        (80., 90.),
+        (60., 78.),
+        (50., 100.),
+        (40., 78.),
+        (20., 90.),
+        (24., 66.),
+        (2., 64.),
+        (16., 47.),
+        (0., 30.),
+        (22., 29.),
+        (18., 6.),
+        (39., 18.),
     ];
     let (scale, rot): (f32, f32) = match age {
         0 => (0.2, -20.0),
