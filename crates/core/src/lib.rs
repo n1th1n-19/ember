@@ -2,6 +2,7 @@
 //! Ember core: system sampling, no UI. Every reading is `Option` — `None` renders as `--`.
 
 pub mod alerts;
+pub mod control;
 pub mod battery;
 pub mod fans;
 pub mod gpu;

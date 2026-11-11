@@ -1382,6 +1382,7 @@ dependencies = [
  "ember-core",
  "ember-ui",
  "libcosmic",
+ "tokio",
 ]
 
 [[package]]
@@ -1390,6 +1391,14 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "sysinfo",
+ "zbus 6.2.1",
+]
+
+[[package]]
+name = "ember-helper"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

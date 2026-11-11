@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 libc = "0.2.191"
 sysinfo = "0.40.1"
+zbus = "6.2"

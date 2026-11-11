@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Ember: comic-style system monitor for COSMIC.
+mod controls;
 mod pages;
+mod widgets;
 
 use std::time::Duration;
 
@@ -22,10 +24,26 @@ pub enum Page {
     Battery,
     Gpu,
     Fans,
+    Processes,
+    Services,
+    Control,
 }
 
 impl Page {
-    pub const ALL: [Page; 9] = [Page::Overview, Page::Cpu, Page::Memory, Page::Disks, Page::Network, Page::Temps, Page::Battery, Page::Gpu, Page::Fans];
+    pub const ALL: [Page; 12] = [
+        Page::Overview,
+        Page::Cpu,
+        Page::Memory,
+        Page::Disks,
+        Page::Network,
+        Page::Temps,
+        Page::Battery,
+        Page::Gpu,
+        Page::Fans,
+        Page::Processes,
+        Page::Services,
+        Page::Control,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             Page::Overview => "Overview",
@@ -37,6 +55,9 @@ impl Page {
             Page::Battery => "Battery",
             Page::Gpu => "GPU",
             Page::Fans => "Fans",
+            Page::Processes => "Processes",
+            Page::Services => "Services",
+            Page::Control => "Control",
         }
     }
 }
@@ -49,6 +70,7 @@ pub enum Message {
     ToggleMotion,
     ToggleTheme,
     ToggleRange,
+    Ctl(controls::Msg),
 }
 
 /// 60 one-second samples per chart.
@@ -136,6 +158,7 @@ pub struct App {
     pub pose: u64,
     pub motion: bool,
     pub bursts: Bursts,
+    ctl: controls::Controls,
 }
 
 impl App {
@@ -208,7 +231,7 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, motion: true, bursts: Bursts::default() };
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, motion: true, bursts: Bursts::default(), ctl: controls::Controls::default() };
         app.open(start);
         (app, Task::none())
     }
@@ -222,7 +245,7 @@ impl cosmic::Application for App {
         if let Some(p) = self.nav.data::<Page>(id) {
             self.page = *p;
         }
-        Task::none()
+        self.ctl.tick(self.page)
     }
 
     fn header_end(&self) -> Vec<Element<'_, Message>> {
@@ -246,9 +269,14 @@ impl cosmic::Application for App {
                     self.hist_long = History::from_file();
                 }
                 self.update_bursts();
+                return self.ctl.tick(self.page);
             }
             Message::Pose => self.pose = self.pose.wrapping_add(1),
-            Message::Open(p) => self.open(p),
+            Message::Open(p) => {
+                self.open(p);
+                return self.ctl.tick(p);
+            }
+            Message::Ctl(m) => return self.ctl.update(m),
             Message::ToggleMotion => self.motion = !self.motion,
             Message::ToggleRange => {
                 self.long_range = !self.long_range;
@@ -272,6 +300,12 @@ impl cosmic::Application for App {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        match self.page {
+            Page::Processes => return self.ctl.view_processes(),
+            Page::Services => return self.ctl.view_services(),
+            Page::Control => return self.ctl.view_control(&self.snap.fans),
+            _ => {}
+        }
         canvas(pages::View { app: self, page: self.page }).width(Length::Fill).height(Length::Fill).into()
     }
 }
