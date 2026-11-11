@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Ember desktop widget
+Comment=Live system readings pinned to the desktop
+Type=Application
+Exec=ember-widget
+Terminal=false
+Icon=io.github.n1th1n_19.Ember
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

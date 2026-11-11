@@ -3,3 +3,4 @@
 pub mod ink;
 pub mod chart;
 pub mod art;
+pub mod mini;

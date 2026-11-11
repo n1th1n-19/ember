@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Ember readings
+Comment=Live CPU, memory and temperature in the panel or dock
+Type=Application
+Exec=ember-applet
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Monitor;CPU;Memory;Temperature;
+Icon=io.github.n1th1n_19.Ember
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto

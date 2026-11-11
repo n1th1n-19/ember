@@ -182,6 +182,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
 name = "apply"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -975,6 +981,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-panel-config"
+version = "1.11.0"
+source = "git+https://github.com/pop-os/cosmic-panel#03c1358b7c1f68dcd0f34f04ccc46eb8bf0d58f3"
+dependencies = [
+ "anyhow",
+ "cosmic-config",
+ "serde",
+ "smithay-client-toolkit",
+ "tracing",
+ "wayland-protocols-wlr",
+ "xdg-shell-wrapper-config",
+]
+
+[[package]]
 name = "cosmic-protocols"
 version = "0.2.0"
 source = "git+https://github.com/pop-os/cosmic-protocols#815b2c5df84a4a82eb8fb505343f8ebde6aefc38"
@@ -1386,6 +1406,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ember-applet"
+version = "0.1.0"
+dependencies = [
+ "ember-core",
+ "ember-ui",
+ "libcosmic",
+]
+
+[[package]]
 name = "ember-core"
 version = "0.1.0"
 dependencies = [
@@ -1406,6 +1435,15 @@ name = "ember-ui"
 version = "0.1.0"
 dependencies = [
  "ember-core",
+ "libcosmic",
+]
+
+[[package]]
+name = "ember-widget"
+version = "0.1.0"
+dependencies = [
+ "ember-core",
+ "ember-ui",
  "libcosmic",
 ]
 
@@ -2884,6 +2922,7 @@ dependencies = [
  "cosmic-config",
  "cosmic-freedesktop-icons",
  "cosmic-launch",
+ "cosmic-panel-config",
  "cosmic-settings-daemon-zbus",
  "cosmic-theme",
  "css-color",
@@ -2907,8 +2946,10 @@ dependencies = [
  "log",
  "palette",
  "phf 0.14.0",
+ "ron",
  "roxmltree 0.21.2",
  "rust-embed",
+ "rustix 1.1.6",
  "serde",
  "slotmap",
  "taffy",
@@ -6506,6 +6547,15 @@ name = "xdg"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fb433233f2df9344722454bc7e96465c9d03bff9d77c248f9e7523fe79585b5"
+
+[[package]]
+name = "xdg-shell-wrapper-config"
+version = "1.11.0"
+source = "git+https://github.com/pop-os/cosmic-panel#03c1358b7c1f68dcd0f34f04ccc46eb8bf0d58f3"
+dependencies = [
+ "serde",
+ "wayland-protocols-wlr",
+]
 
 [[package]]
 name = "xkbcommon"
