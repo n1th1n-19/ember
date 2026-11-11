@@ -168,7 +168,7 @@ pub fn read_last(path: &Path, n: usize) -> io::Result<Vec<Record>> {
     f.seek(SeekFrom::Start((MAGIC.len() + skip * RECORD) as u64))?;
     let mut buf = vec![0u8; (total - skip) * RECORD];
     f.read_exact(&mut buf)?;
-    Ok(buf.chunks_exact(RECORD).map(Record::decode).collect())
+    Ok(buf.as_chunks::<RECORD>().0.iter().map(|c| Record::decode(c)).collect())
 }
 
 #[cfg(test)]
