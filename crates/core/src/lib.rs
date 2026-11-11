@@ -5,6 +5,7 @@ pub mod alerts;
 pub mod apps;
 pub mod control;
 pub mod battery;
+pub mod calendar;
 pub mod fans;
 pub mod gpu;
 pub mod history;

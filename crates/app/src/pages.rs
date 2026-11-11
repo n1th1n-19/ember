@@ -53,7 +53,7 @@ impl canvas::Program<Message, Theme, Renderer> for View<'_> {
             Page::Gpu => gpu(&mut f, b, a),
             Page::Fans => fans(&mut f, b, a),
             // widget pages are drawn by controls.rs
-            Page::Processes | Page::Services | Page::Control | Page::Apps | Page::Settings => {}
+            Page::Processes | Page::Services | Page::Control | Page::Apps | Page::Settings | Page::Quick => {}
         }
         vec![f.into_geometry()]
     }

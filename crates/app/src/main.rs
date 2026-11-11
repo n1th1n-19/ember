@@ -3,6 +3,7 @@
 mod apps_page;
 mod controls;
 mod pages;
+mod quick;
 mod settings;
 mod widgets;
 
@@ -18,6 +19,7 @@ use ember_ui::ink::{Level, POSE_MS};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Overview,
+    Quick,
     Cpu,
     Memory,
     Disks,
@@ -34,8 +36,9 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 14] = [
+    pub const ALL: [Page; 15] = [
         Page::Overview,
+        Page::Quick,
         Page::Cpu,
         Page::Memory,
         Page::Disks,
@@ -53,6 +56,7 @@ impl Page {
     pub fn name(self) -> &'static str {
         match self {
             Page::Overview => "Overview",
+            Page::Quick => "Quick panel",
             Page::Cpu => "CPU",
             Page::Memory => "Memory",
             Page::Disks => "Disks",
@@ -81,6 +85,7 @@ pub enum Message {
     Ctl(controls::Msg),
     Apps(apps_page::Msg),
     Settings(settings::Msg),
+    Quick(quick::Msg),
 }
 
 /// 60 one-second samples per chart.
@@ -170,6 +175,7 @@ pub struct App {
     ctl: controls::Controls,
     apps: apps_page::Apps,
     settings: settings::Settings,
+    quick: quick::Quick,
 }
 
 impl App {
@@ -194,6 +200,9 @@ impl App {
     fn page_opened(&mut self) -> Task<Message> {
         if self.page == Page::Apps {
             return self.apps.open();
+        }
+        if self.page == Page::Quick {
+            return self.quick.refresh();
         }
         self.ctl.tick(self.page)
     }
@@ -253,7 +262,7 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load() };
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: quick::Quick::default() };
         app.open(start);
         let first = app.page_opened();
         (app, first)
@@ -292,6 +301,9 @@ impl cosmic::Application for App {
                     self.hist_long = History::from_file();
                 }
                 self.update_bursts();
+                if self.page == Page::Quick && self.samples.is_multiple_of(3) {
+                    return self.quick.refresh();
+                }
                 return self.ctl.tick(self.page);
             }
             Message::Pose => self.pose = self.pose.wrapping_add(1),
@@ -303,6 +315,7 @@ impl cosmic::Application for App {
             Message::Apps(m) => return self.apps.update(m),
             Message::ToggleMotion => return self.settings.update(settings::Msg::Motion(!self.motion())),
             Message::Settings(m) => return self.settings.update(m),
+            Message::Quick(m) => return self.quick.update(m),
             Message::ToggleRange => {
                 self.long_range = !self.long_range;
                 if self.long_range {
@@ -331,6 +344,7 @@ impl cosmic::Application for App {
             Page::Control => return self.ctl.view_control(&self.snap.fans),
             Page::Apps => return self.apps.view(),
             Page::Settings => return self.settings.view(),
+            Page::Quick => return self.quick.view(),
             _ => {}
         }
         canvas(pages::View { app: self, page: self.page }).width(Length::Fill).height(Length::Fill).into()
