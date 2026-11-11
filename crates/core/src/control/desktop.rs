@@ -28,6 +28,7 @@ trait Session {
 
 #[zbus::proxy(interface = "org.freedesktop.login1.Manager", default_service = "org.freedesktop.login1", default_path = "/org/freedesktop/login1")]
 trait Login {
+    fn inhibit(&self, what: &str, who: &str, why: &str, mode: &str) -> zbus::Result<zbus::OwnedFd>;
     #[zbus(allow_interactive_auth)]
     fn suspend(&self, interactive: bool) -> zbus::Result<()>;
     #[zbus(allow_interactive_auth)]
@@ -119,3 +120,13 @@ pub async fn session(action: SessionAction) -> CtlResult {
         }
     }
 }
+
+/// Keep the machine awake: blocks idle (screen blanking/lock) and sleep for as long as
+/// the returned fd is open. Drop it to allow sleep again.
+pub async fn inhibit_sleep() -> CtlResult<zbus::OwnedFd> {
+    let l = LoginProxy::new(&zbus::Connection::system().await.map_err(err)?).await.map_err(err)?;
+    l.inhibit("idle:sleep", "Ember", "Keep awake is on", "block").await.map_err(err)
+}
+
+/// Held keep-awake inhibitor (re-exported so UI crates needn't depend on zbus).
+pub type Inhibitor = zbus::OwnedFd;

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Ember keep awake
+Comment=Stop the screen and machine from sleeping
+Type=Application
+Exec=ember-applet awake
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Ember;
+Icon=io.github.n1th1n_19.Ember
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto

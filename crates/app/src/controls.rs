@@ -11,7 +11,7 @@ use ember_core::control::{cpu, CtlResult};
 use ember_core::fans::Fan;
 use ember_ui::ink::{bytes, CYAN, MAGENTA, RED, YELLOW};
 
-use crate::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
+use ember_ui::widgets::{app_icon, banner, body, caption, card, comic_button, heading, muted, page, row_button};
 use crate::Message;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

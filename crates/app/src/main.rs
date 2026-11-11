@@ -3,9 +3,8 @@
 mod apps_page;
 mod controls;
 mod pages;
-mod quick;
 mod settings;
-mod widgets;
+
 
 use std::time::Duration;
 
@@ -85,7 +84,7 @@ pub enum Message {
     Ctl(controls::Msg),
     Apps(apps_page::Msg),
     Settings(settings::Msg),
-    Quick(quick::Msg),
+    Quick(ember_ui::quick::Msg),
 }
 
 /// 60 one-second samples per chart.
@@ -175,7 +174,7 @@ pub struct App {
     ctl: controls::Controls,
     apps: apps_page::Apps,
     settings: settings::Settings,
-    quick: quick::Quick,
+    quick: ember_ui::quick::Quick,
 }
 
 impl App {
@@ -202,7 +201,7 @@ impl App {
             return self.apps.open();
         }
         if self.page == Page::Quick {
-            return self.quick.refresh();
+            return quick_task(self.quick.refresh());
         }
         self.ctl.tick(self.page)
     }
@@ -262,7 +261,7 @@ impl cosmic::Application for App {
         let snap = sampler.sample();
         let mut hist_short = History::new(HISTORY);
         hist_short.push(&snap);
-        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: quick::Quick::default() };
+        let mut app = App { core, nav, page: start, sampler, snap, hist_short, hist_long: if long { History::from_file() } else { History::new(1) }, long_range: long, samples: 0, pose: 0, bursts: Bursts::default(), ctl: controls::Controls::default(), apps: apps_page::Apps::default(), settings: settings::Settings::load(), quick: ember_ui::quick::Quick::default() };
         app.open(start);
         let first = app.page_opened();
         (app, first)
@@ -302,7 +301,7 @@ impl cosmic::Application for App {
                 }
                 self.update_bursts();
                 if self.page == Page::Quick && self.samples.is_multiple_of(3) {
-                    return self.quick.refresh();
+                    return quick_task(self.quick.refresh());
                 }
                 return self.ctl.tick(self.page);
             }
@@ -315,7 +314,7 @@ impl cosmic::Application for App {
             Message::Apps(m) => return self.apps.update(m),
             Message::ToggleMotion => return self.settings.update(settings::Msg::Motion(!self.motion())),
             Message::Settings(m) => return self.settings.update(m),
-            Message::Quick(m) => return self.quick.update(m),
+            Message::Quick(m) => return quick_task(self.quick.update(m)),
             Message::ToggleRange => {
                 self.long_range = !self.long_range;
                 if self.long_range {
@@ -344,11 +343,16 @@ impl cosmic::Application for App {
             Page::Control => return self.ctl.view_control(&self.snap.fans),
             Page::Apps => return self.apps.view(),
             Page::Settings => return self.settings.view(),
-            Page::Quick => return self.quick.view(),
+            Page::Quick => return self.quick.view().map(Message::Quick),
             _ => {}
         }
         canvas(pages::View { app: self, page: self.page }).width(Length::Fill).height(Length::Fill).into()
     }
+}
+
+/// Lift Quick panel tasks (shared with the applets) into app tasks.
+fn quick_task(t: cosmic::iced::Task<ember_ui::quick::Msg>) -> Task<Message> {
+    t.map(|m| cosmic::Action::App(Message::Quick(m)))
 }
 
 fn main() -> cosmic::iced::Result {

@@ -5,6 +5,7 @@ pub mod bluetooth;
 pub mod cpu;
 pub mod desktop;
 pub mod helper;
+pub mod media;
 pub mod network;
 pub mod power;
 pub mod procs;

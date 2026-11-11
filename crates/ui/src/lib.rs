@@ -5,3 +5,5 @@ pub mod chart;
 pub mod art;
 pub mod mini;
 pub mod config;
+pub mod widgets;
+pub mod quick;
