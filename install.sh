@@ -327,12 +327,18 @@ do_uninstall() {
     if ((full)); then take_out=("${APPLETS[@]}"); else
         for p in "${rm_pkgs[@]}"; do [[ $p == ember-applet-* ]] && take_out+=("${p#ember-applet-}"); done
     fi
-    if ((${#take_out[@]})); then
+    local panel_ok=1 backup="$STATE/ember/panel-backup-plugins_wings.ron" wings="$CONF/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
+    if ((${#take_out[@]})) && [[ -f "$wings" ]] && grep -q "$ID.Applet" "$wings"; then
         step "Taking applets out of the panel: ${take_out[*]}"
-        if [[ -n "$applet_bin" ]]; then
-            run "$applet_bin" --restore-panel "$(join "${take_out[@]}")" || true
-        elif ((full)) && [[ -f "$STATE/ember/panel-backup-plugins_wings.ron" ]]; then
-            run cp "$STATE/ember/panel-backup-plugins_wings.ron" "$CONF/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
+        if [[ -n "$applet_bin" ]] && run "$applet_bin" --restore-panel "$(join "${take_out[@]}")"; then
+            :
+        elif ((full)) && [[ -f "$backup" ]]; then
+            # older builds lack --restore-panel: fall back to the layout saved before Ember
+            say "  using the panel layout saved before Ember"
+            run cp "$backup" "$wings"
+        else
+            panel_ok=0
+            say "  ${R}Couldn't take Ember's applets out of the panel.${N} Remove them in COSMIC Settings > Desktop > Panel."
         fi
     fi
     if ((full)) || [[ " ${rm_pkgs[*]} " == *" ember-widget "* ]]; then
@@ -355,7 +361,11 @@ do_uninstall() {
     fi
     if ((full)); then
         step "Deleting your Ember files"
-        for p in "${USER_PATHS[@]}" "${dev[@]}"; do [[ -e "$p" ]] && { say "  $p"; run rm -rf -- "$p"; }; done
+        for p in "${USER_PATHS[@]}" "${dev[@]}"; do
+            # keep the panel backup if the panel couldn't be restored
+            [[ $p == "$STATE/ember" ]] && ((!panel_ok)) && { say "  keeping $p (has your panel backup)"; continue; }
+            [[ -e "$p" ]] && { say "  $p"; run rm -rf -- "$p"; }
+        done
         run systemctl --user daemon-reload 2>/dev/null || true
     fi
     restart_panel
