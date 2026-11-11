@@ -42,11 +42,38 @@ say() { printf '%s\n' "$*"; }
 step() { printf '%s==>%s %s\n' "$Y" "$N" "$*"; }
 die() { printf '%serror:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 run() { if ((DRY)); then printf '%s  would run:%s %s\n' "$D" "$N" "$*"; else "$@"; fi; }
+TTY=0
+[[ -t 1 ]] && TTY=1
+# bar <done> <total>: a 28-cell bar; plain text when output isn't a terminal
+bar() {
+    local done=$1 total=$2 w=28 pct fill
+    ((total > 0)) || total=1
+    pct=$((done * 100 / total))
+    ((pct > 100)) && pct=100
+    fill=$((pct * w / 100))
+    local on="" off="" i
+    for ((i = 0; i < fill; i++)); do on+="█"; done
+    for ((i = fill; i < w; i++)); do off+="░"; done
+    printf '%s%s%s%s%s %3d%%' "$G" "$on" "$D" "$off" "$N" "$pct"
+}
+# Overall stages of the current operation: STAGE_TOTAL is set per mode.
+STAGE=0 STAGE_TOTAL=1
+stage() {
+    STAGE=$((STAGE + 1))
+    if ((TTY)); then printf '\n%s  %s%d/%d%s  %s%s%s\n' "$(bar $((STAGE - 1)) "$STAGE_TOTAL")" "$D" "$STAGE" "$STAGE_TOTAL" "$N" "$B" "$*" "$N"; else say "==> [$STAGE/$STAGE_TOTAL] $*"; fi
+}
+stages_done() {
+    if ((TTY)); then printf '\n%s  %s\n' "$(bar 1 1)" "$*"; else say "$*"; fi
+}
+mb() { printf '%d.%d MB' $(($1 / 1048576)) $(($1 % 1048576 * 10 / 1048576)); }
+# apt with its own progress bar at the bottom of the terminal
+APT_PROGRESS=(-o Dpkg::Progress-Fancy=1 -o APT::Color=1)
+
 # yes/no question on the terminal, even when piped into bash. $2 = default (y|n)
 ask() {
     local def=${2:-n} a
     ((YES)) && return 0
-    if ((DRY)); then say "  ${D}(dry run: answering '$def') $1${N}"; [[ $def == y ]]; return; fi
+    if ((DRY)); then say "  ${D}(dry run: answering yes) $1${N}"; return 0; fi
     [[ -r /dev/tty ]] || die "no terminal to ask on; use --yes or --only"
     if [[ $def == y ]]; then read -r -p "$1 [Y/n] " a < /dev/tty; [[ ! "$a" == [nN]* ]]; else read -r -p "$1 [y/N] " a < /dev/tty; [[ "$a" == [yY]* ]]; fi
 }
@@ -121,14 +148,19 @@ selected_pkgs() {
 
 # ---------- getting packages ----------
 
-latest_version() {
+# fetch_release: sets REL_VER and REL_SIZES ("name size" lines) from the latest release
+fetch_release() {
     need curl
-    local tag
-    tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"v\{0,1\}\([^"]*\)"$/\1/') ||
-        die "couldn't reach GitHub releases"
-    [[ -n "$tag" ]] || die "no release found"
-    echo "$tag"
+    local json
+    json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest") || die "couldn't reach GitHub releases"
+    REL_VER=$(printf '%s' "$json" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"v\{0,1\}\([^"]*\)"$/\1/')
+    [[ -n "$REL_VER" ]] || die "no release found"
+    # asset objects list "name" before "size"; the release's own name has no size after it
+    REL_SIZES=$(printf '%s' "$json" | grep -oE '"name": *"[^"]*"|"size": *[0-9]+' |
+        awk -F': *' '/"name"/ {gsub(/"/, "", $2); n=$2} /"size"/ && n != "" {print n, $2; n=""}')
 }
+
+asset_size() { awk -v n="$1" '$1 == n {print $2; exit}' <<< "${REL_SIZES:-}"; }
 
 # fetch_debs <version> <pkg>...  -> fills DEB_FILES
 fetch_debs() {
@@ -147,14 +179,40 @@ fetch_debs() {
     fi
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
-    step "Downloading Ember $ver"
+    local names=() urls=() total=0 sz
     for p in "$@"; do
-        local a=$(arch)
+        local a
+        a=$(arch)
         [[ $p == ember-common || $p == ember-full || $p == ember-applet-* ]] && a=all
-        f="$TMP/${p}_${ver}_$a.deb"
-        run curl -fsSL -o "$f" "https://github.com/$REPO/releases/download/v$ver/${p}_${ver}_$a.deb" || die "download failed: $p"
-        DEB_FILES+=("$f")
+        names+=("${p}_${ver}_$a.deb")
+        urls+=("https://github.com/$REPO/releases/download/v$ver/${p}_${ver}_$a.deb")
+        sz=$(asset_size "${p}_${ver}_$a.deb")
+        total=$((total + ${sz:-0}))
     done
+    say "  ${#names[@]} package(s), $(mb "$total")"
+    local i done=0 pid cur
+    for i in "${!names[@]}"; do
+        f="$TMP/${names[$i]}"
+        DEB_FILES+=("$f")
+        if ((DRY)); then printf '%s  would download:%s %s\n' "$D" "$N" "${urls[$i]}"; continue; fi
+        if ((!TTY || total == 0)); then
+            say "  ${names[$i]}"
+            curl -fsSL -o "$f" "${urls[$i]}" || die "download failed: ${names[$i]}"
+            continue
+        fi
+        curl -fsSL -o "$f" "${urls[$i]}" &
+        pid=$!
+        # redraw the overall bar from the bytes on disk while curl runs
+        while kill -0 "$pid" 2>/dev/null; do
+            cur=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            printf '\r\e[K  %s  %s / %s  %s' "$(bar $((done + cur)) "$total")" "$(mb $((done + cur)))" "$(mb "$total")" "${names[$i]%%_*}"
+            sleep 0.15
+        done
+        wait "$pid" || { printf '\n'; die "download failed: ${names[$i]}"; }
+        done=$((done + $(stat -c%s "$f")))
+    done
+    ((TTY && !DRY && total > 0)) && printf '\r\e[K  %s  %s downloaded\n' "$(bar 1 1)" "$(mb "$done")"
+    return 0
 }
 
 restart_panel() {
@@ -226,11 +284,14 @@ do_install() {
     say "${B}Created while you use it:${N} $CONF/cosmic/$ID/  $STATE/ember/  $CACHE/ember/"
     ask "Continue?" y || { say "Nothing changed."; exit 0; }
 
+    STAGE_TOTAL=3
     local ver=""
-    [[ -n "$DEB" ]] || ver=$(latest_version)
+    if [[ -z "$DEB" ]]; then fetch_release; ver=$REL_VER; fi
+    stage "Downloading Ember${ver:+ $ver}"
     fetch_debs "$ver" "${PKGS[@]}"
-    step "Installing (sudo)"
-    run sudo apt-get install -y "${DEB_FILES[@]}"
+    stage "Installing packages (sudo)"
+    run sudo apt-get install -y "${APT_PROGRESS[@]}" "${DEB_FILES[@]}"
+    stage "Setting up"
     remove_dev_copies
     restart_stale
 
@@ -245,7 +306,8 @@ do_install() {
         run /usr/bin/ember-widget --autostart on
         ((DRY)) || pgrep -x ember-widget >/dev/null || (setsid /usr/bin/ember-widget >/dev/null 2>&1 < /dev/null &)
     fi
-    say "${G}Done.${N}  Add parts later: ember-install --only <parts>   Update: ember-install --update   Remove: ember-install --uninstall"
+    stages_done "${G}Installed.${N}"
+    say "Add parts later: ember-install --only <parts>   Update: ember-install --update   Remove: ember-install --uninstall"
 }
 
 # ---------- update ----------
@@ -259,14 +321,18 @@ do_update() {
     if [[ -n "$DEB" ]]; then
         ver=""
     else
-        ver=$(latest_version)
+        fetch_release
+        ver=$REL_VER
         [[ "$ver" == "$cur" ]] && { say "Ember $cur is up to date."; exit 0; }
     fi
     say "Update ${cur:-?} -> ${ver:-local packages}: ${PKGS[*]}"
     ask "Continue?" y || { say "Nothing changed."; exit 0; }
+    STAGE_TOTAL=3
+    stage "Downloading Ember${ver:+ $ver}"
     fetch_debs "$ver" "${PKGS[@]}"
-    step "Installing (sudo); dpkg removes files a new version no longer ships"
-    run sudo apt-get install -y "${DEB_FILES[@]}"
+    stage "Installing packages (sudo); files a new version no longer ships are removed"
+    run sudo apt-get install -y "${APT_PROGRESS[@]}" "${DEB_FILES[@]}"
+    stage "Cleaning up and restarting"
 
     local p removed=0
     for p in "${OBSOLETE[@]}"; do
@@ -280,7 +346,7 @@ do_update() {
     remove_dev_copies 1
     systemctl --user is-active --quiet ember.service 2>/dev/null && { step "Restarting ember.service"; run systemctl --user restart ember.service; }
     restart_stale
-    say "${G}Updated.${N}"
+    stages_done "${G}Updated.${N}"
 }
 
 # ---------- uninstall ----------
@@ -321,6 +387,7 @@ do_uninstall() {
     ((${#rm_pkgs[@]} || full)) || { say "None of those parts are installed."; exit 0; }
     ask "Remove?" n || { say "Nothing changed."; exit 0; }
 
+    STAGE_TOTAL=5
     local applet_bin="" e
     for e in /usr/bin/ember-applet "$HOME/.local/bin/ember-applet"; do [[ -x "$e" ]] && { applet_bin=$e; break; }; done
     local take_out=()
@@ -329,7 +396,7 @@ do_uninstall() {
     fi
     local panel_ok=1 backup="$STATE/ember/panel-backup-plugins_wings.ron" wings="$CONF/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
     if ((${#take_out[@]})) && [[ -f "$wings" ]] && grep -q "$ID.Applet" "$wings"; then
-        step "Taking applets out of the panel: ${take_out[*]}"
+        stage "Taking applets out of the panel: ${take_out[*]}"
         if [[ -n "$applet_bin" ]] && run "$applet_bin" --restore-panel "$(join "${take_out[@]}")"; then
             :
         elif ((full)) && [[ -f "$backup" ]]; then
@@ -341,6 +408,8 @@ do_uninstall() {
             say "  ${R}Couldn't take Ember's applets out of the panel.${N} Remove them in COSMIC Settings > Desktop > Panel."
         fi
     fi
+    ((STAGE == 0)) && STAGE=1 # no applets in the panel: skip that stage
+    stage "Stopping Ember"
     if ((full)) || [[ " ${rm_pkgs[*]} " == *" ember-widget "* ]]; then
         run rm -f "$CONF/autostart/$ID.Widget.desktop"
         run pkill -x ember-widget 2>/dev/null || true
@@ -349,18 +418,20 @@ do_uninstall() {
         run systemctl --user disable --now ember.service 2>/dev/null || true
     fi
     if ((full)) || [[ " ${rm_pkgs[*]} " == *" ember "* ]]; then
-        step "Restoring launchers hidden with Ember"
+        say "  restoring launchers hidden with Ember"
         restore_hidden_launchers
         run pkill -x ember 2>/dev/null || true
     fi
     ((full)) && { run pkill -x emberd 2>/dev/null || true; }
 
+    stage "Removing packages${rm_pkgs[*]:+ (sudo)}"
     if ((${#rm_pkgs[@]})); then
-        step "Removing packages (sudo)"
-        run sudo apt-get purge -y "${rm_pkgs[@]}"
+        run sudo apt-get purge -y "${APT_PROGRESS[@]}" "${rm_pkgs[@]}"
+    else
+        say "  no Ember packages installed"
     fi
     if ((full)); then
-        step "Deleting your Ember files"
+        stage "Deleting your Ember files"
         for p in "${USER_PATHS[@]}" "${dev[@]}"; do
             # keep the panel backup if the panel couldn't be restored
             [[ $p == "$STATE/ember" ]] && ((!panel_ok)) && { say "  keeping $p (has your panel backup)"; continue; }
@@ -368,10 +439,12 @@ do_uninstall() {
         done
         run systemctl --user daemon-reload 2>/dev/null || true
     fi
+    ((full)) || STAGE=$((STAGE + 1))
+    stage "Reloading the panel"
     restart_panel
 
-    ((DRY)) && { say "${G}Dry run finished.${N}"; return; }
-    ((full)) || { say "${G}Removed.${N}"; return; }
+    ((DRY)) && { stages_done "${G}Dry run finished.${N}"; return; }
+    ((full)) || { stages_done "${G}Removed.${N}"; return; }
     local left
     left=$(find "$CONF" "$DATA" "$STATE" "$CACHE" "$HOME/.local/bin" /usr/bin /usr/libexec /usr/share/applications /usr/share/icons /usr/share/polkit-1 \
         /usr/lib/systemd/user /usr/share/metainfo /usr/share/doc \( -name "$ID*" -o -name 'ember' -o -name 'ember-*' -o -name 'emberd' -o -name 'ember.service' \) \
@@ -380,7 +453,7 @@ do_uninstall() {
         say "${Y}Still present (not removed automatically):${N}"
         printf '  %s\n' "$left"
     else
-        say "${G}Ember is completely removed.${N}"
+        stages_done "${G}Ember is completely removed.${N}"
     fi
 }
 
