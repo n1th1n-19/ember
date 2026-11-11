@@ -10,7 +10,7 @@ use std::time::Duration;
 use cosmic::app::{Settings, Task};
 use cosmic::iced::{Length, Size, Subscription};
 use cosmic::widget::{self, canvas, nav_bar};
-use cosmic::{Core, Element};
+use cosmic::{ApplicationExt, Core, Element};
 use ember_core::{Sampler, Snapshot, series::Series};
 use ember_ui::ink::{Level, POSE_MS};
 
@@ -198,13 +198,21 @@ impl App {
     }
 
     fn page_opened(&mut self) -> Task<Message> {
-        if self.page == Page::Apps {
-            return self.apps.open();
-        }
-        if self.page == Page::Quick {
-            return quick_task(self.quick.refresh());
-        }
-        self.ctl.tick(self.page)
+        let work = if self.page == Page::Apps {
+            self.apps.open()
+        } else if self.page == Page::Quick {
+            quick_task(self.quick.refresh())
+        } else {
+            self.ctl.tick(self.page)
+        };
+        // window title for the task switcher / launcher (an empty one shows as "unknown")
+        let title = if self.page == Page::Overview { "Ember".to_string() } else { format!("Ember — {}", self.page.name()) };
+        self.set_header_title(title.clone());
+        let retitle = match self.core.main_window_id() {
+            Some(id) => self.set_window_title(title, id),
+            None => Task::none(),
+        };
+        Task::batch([work, retitle])
     }
 
     fn update_bursts(&mut self) {

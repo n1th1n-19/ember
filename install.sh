@@ -294,6 +294,8 @@ do_install() {
     stage "Setting up"
     remove_dev_copies
     restart_stale
+    # COSMIC's launcher caches app entries at login; without this it lists Ember's window as "unknown"
+    ((SEL_APP)) && pgrep -x cosmic-launcher >/dev/null && run pkill -x cosmic-launcher
 
     if ((SEL_SERVICE)) && ask "Start the history + alerts service now and at login?" y; then
         run systemctl --user daemon-reload
