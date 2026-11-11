@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- NVIDIA cards are read through NVIDIA's own driver library (NVML): usage, clock, temperature,
+  power draw and video memory. Ember only asks while the card is awake, so it never wakes a
+  sleeping dGPU.
+- GPU page: each card gets its own chart (built-in GPU clock in cyan, NVIDIA usage in magenta)
+  and its own line of readings. The overview shows NVIDIA usage while that card is working.
+- History file format v2 (adds NVIDIA usage); the old file is replaced on first run.
+
 ## 0.1.1 — 2026-11-11
 
 - `ember update`, `ember uninstall [parts]`, `ember install <parts>`, `ember version`, `ember help`.

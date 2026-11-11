@@ -356,25 +356,41 @@ fn battery(f: &mut Frame, b: Rectangle, a: &App) {
     chart::area(f, lr, &a.hist().battery, 100.0, YELLOW);
 }
 
+/// One line of readings for a card, "--" for what it doesn't report.
+fn gpu_stats(g: &ember_core::sample::GpuStat) -> String {
+    if g.driver.is_none() {
+        return "switched off".into();
+    }
+    if g.asleep {
+        return "asleep, not woken to read it".into();
+    }
+    let mut v = vec![opt(g.cur_mhz, |m| format!("{m} MHz"))];
+    if g.vendor == "NVIDIA" {
+        v.insert(0, opt(g.usage, |u| format!("{u:.0}%")));
+        v.push(opt(g.temp_c, |c| format!("{c:.0}°C")));
+        v.push(opt(g.power_w, |w| format!("{w:.1} W")));
+    } else {
+        v.push(opt(g.max_mhz, |m| format!("max {m}")));
+    }
+    v.join(" · ")
+}
+
 fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
-    let gpus = &a.snap.gpus;
-    let lead = gpus.iter().find(|g| g.driver.is_some());
-    let d = Detail {
-        title: "GRAPHICS CARD",
-        ground: CYAN,
-        label: lead.map_or("GPU", |g| g.vendor),
-        big: lead.map_or_else(|| "OFF".into(), |g| g.usage.map_or_else(|| opt(g.cur_mhz, |m| format!("{m}")), |u| format!("{u:.0}%"))),
-        sub: lead.map_or_else(
-            || "No GPU driver loaded".into(),
-            |g| if g.usage.is_some() { "usage".into() } else { format!("MHz now (max {})", opt(g.max_mhz, |m| m.to_string())) },
-        ),
-        details: gpus
-            .iter()
-            .map(|g| (g.vendor, g.driver.as_ref().map_or_else(|| "switched off".into(), |d| format!("{d} · {}", opt(g.cur_mhz, |m| format!("{m} MHz"))))))
-            .collect(),
-        body_values: true,
-        burst: None,
+    let s = &a.snap;
+    let gpus = &s.gpus;
+    let (ig, dg) = (s.igpu(), s.dgpu());
+    // a working NVIDIA card leads; otherwise the built-in GPU's clock
+    let busy = dg.filter(|g| g.usage.is_some());
+    let (label, big, sub) = match (busy, ig) {
+        (Some(g), _) => ("NVIDIA", opt(g.usage, |u| format!("{u:.0}%")), "usage".to_string()),
+        (None, Some(g)) => (g.vendor, opt(g.cur_mhz, |m| m.to_string()), format!("MHz now (max {})", opt(g.max_mhz, |m| m.to_string()))),
+        (None, None) => ("GPU", "OFF".into(), "No GPU driver loaded".into()),
     };
+    let mut details: Vec<(&str, String)> = gpus.iter().map(|g| (g.vendor, gpu_stats(g))).collect();
+    if let Some(g) = dg.filter(|g| g.vram_total.is_some()) {
+        details.push(("VRAM", format!("{} / {}", opt(g.vram_used, |v| bytes(v as f64)), opt(g.vram_total, |v| bytes(v as f64)))));
+    }
+    let d = Detail { title: "GRAPHICS CARD", ground: CYAN, label, big, sub, details, body_values: true, burst: None };
     let (art_r, charts) = frame(f, b, &d, a.anim());
     let n = gpus.len().max(1) as f32;
     let h = art_r.height / n;
@@ -384,20 +400,31 @@ fn gpu(f: &mut Frame, b: Rectangle, a: &App) {
         art::gpu::draw(
             f,
             Rectangle::new(r.position(), Size::new(r.width, r.height - 22.0)),
-            g.driver.is_some(),
+            g.driver.is_some() && !g.asleep,
             speed,
             g.usage.is_some_and(|u| u > 85.0),
             a.anim(),
         );
-        let note = if g.driver.is_some() { g.name.clone() } else { format!("{} · switched off (integrated mode)", g.vendor) };
+        let note = if g.driver.is_some() { format!("{} · {}", g.name, gpu_stats(g)) } else { format!("{} · switched off (integrated mode)", g.vendor) };
         ink::text(f, note, Point::new(r.center_x(), r.y + r.height - 4.0), 13.0, BODY, ink::pal().scene_line, Alignment::Center, Vertical::Bottom);
     }
     if gpus.is_empty() {
         ink::bubble(f, ink::inset(art_r, 30.0), Point::new(art_r.x, art_r.y + art_r.height), "No display adapter found", 18.0);
     }
-    let max = lead.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32);
-    let lr = chart_label(f, charts, &format!("Clock MHz · {}", a.range_label()));
-    chart::area(f, lr, &a.hist().gpu_clock, max, CYAN);
+    // each card its own chart: built-in GPU clock (cyan), NVIDIA usage (magenta)
+    let mut plots: Vec<(String, &ember_core::series::Series, f32, Color)> = vec![];
+    if let Some(g) = ig {
+        plots.push((format!("{} clock MHz · {}", g.vendor, a.range_label()), &a.hist().gpu_clock, g.max_mhz.map_or(2000.0, |m| m as f32), CYAN));
+    }
+    if dg.is_some_and(|g| g.driver.is_some()) {
+        plots.push((format!("NVIDIA usage % · {}", a.range_label()), &a.hist().dgpu, 100.0, MAGENTA));
+    }
+    let ch = charts.height / plots.len().max(1) as f32;
+    for (i, (title, series, max, color)) in plots.into_iter().enumerate() {
+        let r = Rectangle::new(Point::new(charts.x, charts.y + i as f32 * ch), Size::new(charts.width, ch - if i > 0 { 0.0 } else { 6.0 }));
+        let lr = chart_label(f, r, &title);
+        chart::area(f, lr, series, max, color);
+    }
 }
 
 fn fans(f: &mut Frame, b: Rectangle, a: &App) {
@@ -478,13 +505,19 @@ fn overview(f: &mut Frame, b: Rectangle, a: &App) {
                 ("MEMORY", pct(s.mem_percent()), format!("{} used", bytes(s.mem_used as f64)), Some(&a.hist().mem), 100.0, MAGENTA)
             }
             Page::Gpu => {
-                let g = s.gpus.iter().find(|g| g.driver.is_some()).or(s.gpus.first());
-                let speed = g.and_then(|g| Some(g.cur_mhz? as f32 / g.max_mhz? as f32)).unwrap_or(0.0);
-                art::gpu::draw(f, art_r, g.is_some_and(|g| g.driver.is_some()), speed, g.and_then(|g| g.usage).is_some_and(|u| u > 85.0), pose);
-                let off = s.gpus.iter().filter(|g| g.driver.is_none()).count();
-                let big = g.and_then(|g| g.cur_mhz).map_or_else(|| "OFF".into(), |m| m.to_string());
-                let sub = if off > 0 { format!("MHz · {off} card asleep") } else { "MHz".into() };
-                ("GPU", big, sub, Some(&a.hist().gpu_clock), g.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32), CYAN)
+                let busy = s.dgpu().filter(|g| g.usage.is_some());
+                let g = busy.or(s.igpu()).or(s.gpus.first());
+                let speed = g.and_then(|g| g.usage.map(|u| u / 100.0).or_else(|| Some(g.cur_mhz? as f32 / g.max_mhz? as f32))).unwrap_or(0.0);
+                art::gpu::draw(f, art_r, g.is_some_and(|g| g.driver.is_some() && !g.asleep), speed, g.and_then(|g| g.usage).is_some_and(|u| u > 85.0), pose);
+                match (busy, g) {
+                    (Some(g), _) => ("GPU", opt(g.usage, |u| format!("{u:.0}%")), "NVIDIA usage".into(), Some(&a.hist().dgpu), 100.0, MAGENTA),
+                    (None, g) => {
+                        let off = s.gpus.iter().filter(|g| g.driver.is_none() || g.asleep).count();
+                        let big = g.and_then(|g| g.cur_mhz).map_or_else(|| "OFF".into(), |m| m.to_string());
+                        let sub = if off > 0 { format!("MHz · {off} card asleep") } else { "MHz".into() };
+                        ("GPU", big, sub, Some(&a.hist().gpu_clock), g.and_then(|g| g.max_mhz).map_or(2000.0, |m| m as f32), CYAN)
+                    }
+                }
             }
             Page::Temps => {
                 let groups = ember_core::temps::group(&s.temps);

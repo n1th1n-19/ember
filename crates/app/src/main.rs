@@ -100,12 +100,13 @@ pub struct History {
     pub cpu_temp: Series,
     pub battery: Series,
     pub gpu_clock: Series,
+    pub dgpu: Series,
 }
 
 impl History {
     fn new(cap: usize) -> Self {
         let s = || Series::new(cap);
-        Self { cpu: s(), mem: s(), swap: s(), rx: s(), tx: s(), disk_r: s(), disk_w: s(), cpu_temp: s(), battery: s(), gpu_clock: s() }
+        Self { cpu: s(), mem: s(), swap: s(), rx: s(), tx: s(), disk_r: s(), disk_w: s(), cpu_temp: s(), battery: s(), gpu_clock: s(), dgpu: s() }
     }
 
     /// 1-hour history from emberd's file (empty if the daemon isn't running).
@@ -123,6 +124,7 @@ impl History {
             h.cpu_temp.push(r.get(Field::CpuTemp));
             h.battery.push(r.get(Field::Battery));
             h.gpu_clock.push(r.get(Field::GpuClock));
+            h.dgpu.push(r.get(Field::DGpu));
         }
         h
     }
@@ -139,7 +141,8 @@ impl History {
         self.disk_w.push(sum(|d| d.write_bps));
         self.cpu_temp.push(s.cpu_temp());
         self.battery.push(s.batteries.first().and_then(|b| b.percent));
-        self.gpu_clock.push(s.gpus.iter().find_map(|g| g.cur_mhz).map(|v| v as f32));
+        self.gpu_clock.push(s.igpu().and_then(|g| g.cur_mhz).map(|v| v as f32));
+        self.dgpu.push(s.dgpu().and_then(|g| g.usage));
     }
 }
 

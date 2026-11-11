@@ -2,8 +2,8 @@
 //! Long history written by `emberd`, read by the app for the 1-hour charts.
 //!
 //! File: `$XDG_STATE_HOME/ember/history.bin` (default `~/.local/state/ember/`).
-//! Format: a 4-byte magic + version, then fixed 48-byte little-endian records
-//! (u64 unix seconds + 10 × f32, NaN = no reading). Append-only: one record per
+//! Format: a 4-byte magic + version, then fixed 52-byte little-endian records
+//! (u64 unix seconds + 11 × f32, NaN = no reading). Append-only: one record per
 //! sample (~2 MB/day of writes); rewritten to the newest `KEEP` records once it
 //! holds twice that.
 use std::fs::{self, File, OpenOptions};
@@ -14,8 +14,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Snapshot;
 
-const MAGIC: &[u8; 4] = b"EMH1";
-pub const FIELDS: usize = 10;
+const MAGIC: &[u8; 4] = b"EMH2";
+pub const FIELDS: usize = 11;
 pub const RECORD: usize = 8 + 4 * FIELDS;
 /// One hour at one sample every 2 s.
 pub const KEEP: usize = 1800;
@@ -33,7 +33,10 @@ pub enum Field {
     DiskW,
     CpuTemp,
     Battery,
+    /// built-in GPU clock, MHz
     GpuClock,
+    /// NVIDIA GPU usage, %
+    DGpu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,7 +64,8 @@ impl Record {
             sum(|d| d.write_bps),
             s.cpu_temp(),
             s.batteries.first().and_then(|b| b.percent),
-            s.gpus.iter().find_map(|g| g.cur_mhz).map(|v| v as f32),
+            s.igpu().and_then(|g| g.cur_mhz).map(|v| v as f32),
+            s.dgpu().and_then(|g| g.usage),
         ];
         Self { t, v: vals.map(|v| v.unwrap_or(f32::NAN)) }
     }

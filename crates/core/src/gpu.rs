@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Every display controller on PCI, even with no driver loaded (e.g. dGPU off in
-//! system76-power "integrated" mode). sysinfo/NVML fills usage+VRAM when available;
-//! sysfs gives current/max clock for i915/amdgpu.
+//! system76-power "integrated" mode). NVML (NVIDIA's own driver library, loaded at
+//! runtime) fills NVIDIA readings; sysfs gives current/max clock for i915.
 // ponytail: Intel busy % needs perf PMU (root) → `--`; add via helper if anyone asks.
 use std::{fs, path::Path};
 
@@ -21,6 +21,55 @@ pub fn vendor_name(id: &str) -> &'static str {
         "0x1002" => "AMD",
         _ => "GPU",
     }
+}
+
+/// Readings NVIDIA's driver reports for one card.
+#[derive(Debug, Clone, Default)]
+pub struct NvStat {
+    pub name: Option<String>,
+    pub usage: Option<f32>,
+    pub cur_mhz: Option<u32>,
+    pub max_mhz: Option<u32>,
+    pub temp_c: Option<f32>,
+    pub power_w: Option<f32>,
+    pub vram_used: Option<u64>,
+    pub vram_total: Option<u64>,
+}
+
+/// PCI runtime power state; "suspended" means the card is asleep (D3) and asking it
+/// anything would wake it up.
+pub fn awake(slot: &str) -> bool {
+    fs::read_to_string(Path::new("/sys/bus/pci/devices").join(slot).join("power/runtime_status")).map_or(true, |s| s.trim() == "active")
+}
+
+/// Ask NVML about the cards at `slots` (only call for awake cards). NVML is opened and
+/// closed every call: an open handle keeps the dGPU from going back to sleep.
+// ponytail: ~40ms per call (dlopen + init); keep it open while a GPU page is visible if that ever matters.
+pub fn nvml_read(slots: &[&str]) -> Vec<Option<NvStat>> {
+    use nvml_wrapper::{
+        Nvml,
+        enum_wrappers::device::{Clock, TemperatureSensor},
+    };
+    let Ok(nvml) = Nvml::init() else { return vec![None; slots.len()] };
+    let devs: Vec<_> = (0..nvml.device_count().unwrap_or(0)).filter_map(|i| nvml.device_by_index(i).ok()).collect();
+    slots
+        .iter()
+        .map(|slot| {
+            // NVML says "00000000:01:00.0", sysfs "0000:01:00.0"
+            let d = devs.iter().find(|d| d.pci_info().is_ok_and(|p| p.bus_id.to_lowercase().ends_with(&slot.to_lowercase())))?;
+            let mem = d.memory_info().ok();
+            Some(NvStat {
+                name: d.name().ok(),
+                usage: d.utilization_rates().ok().map(|u| u.gpu as f32),
+                cur_mhz: d.clock_info(Clock::Graphics).ok(),
+                max_mhz: d.max_clock_info(Clock::Graphics).ok(),
+                temp_c: d.temperature(TemperatureSensor::Gpu).ok().map(|t| t as f32),
+                power_w: d.power_usage().ok().map(|mw| mw as f32 / 1000.0),
+                vram_used: mem.as_ref().map(|m| m.used),
+                vram_total: mem.map(|m| m.total),
+            })
+        })
+        .collect()
 }
 
 pub fn read_pci() -> Vec<PciGpu> {

@@ -69,8 +69,8 @@ pub fn read(s: &Snapshot, key: Key) -> Reading {
             (ink::opt(s.cpu_temp(), |c| format!("{c:.0}°")), s.cpu_temp().map(|c| c / 100.0), s.cpu_temp().map_or(GREY, |c| Level::from_celsius(c).color()))
         }
         Key::Gpu => {
-            let g = s.gpus.iter().find(|g| g.driver.is_some());
-            match g {
+            // busy NVIDIA card first (usage %), else the built-in GPU's clock
+            match s.dgpu().filter(|g| g.usage.is_some()).or(s.igpu()) {
                 Some(g) if g.usage.is_some() => (ink::opt(g.usage, |u| format!("{u:.0}%")), g.usage.map(|u| u / 100.0), CYAN),
                 Some(g) => (ink::opt(g.cur_mhz, |m| format!("{m}")), g.cur_mhz.zip(g.max_mhz).map(|(c, m)| c as f32 / m.max(1) as f32), CYAN),
                 None => ("OFF".into(), None, GREY),

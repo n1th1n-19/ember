@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use std::time::Instant;
 
-use sysinfo::{Components, Disks, Gpus, Networks, System};
+use sysinfo::{Components, Disks, Networks, System};
 
 use crate::{battery, fans, gpu};
 
@@ -42,6 +42,14 @@ impl Snapshot {
         };
         max(&mut self.temps.iter().filter(cpuish)).or_else(|| max(&mut self.temps.iter()))
     }
+    /// Built-in GPU (Intel/AMD with a driver), the one driving the screen normally.
+    pub fn igpu(&self) -> Option<&GpuStat> {
+        self.gpus.iter().find(|g| g.vendor != "NVIDIA" && g.driver.is_some())
+    }
+    /// Discrete NVIDIA GPU, on or off.
+    pub fn dgpu(&self) -> Option<&GpuStat> {
+        self.gpus.iter().find(|g| g.vendor == "NVIDIA")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +73,10 @@ pub struct GpuStat {
     pub usage: Option<f32>,
     pub vram_used: Option<u64>,
     pub vram_total: Option<u64>,
+    pub temp_c: Option<f32>,
+    pub power_w: Option<f32>,
+    /// driver loaded but the card is in runtime sleep (D3); not woken to read it
+    pub asleep: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +92,6 @@ pub struct Sampler {
     nets: Option<Networks>,
     disks: Option<Disks>,
     comps: Option<Components>,
-    gpus: Option<Gpus>,
     last: Instant,
 }
 
@@ -93,7 +104,6 @@ impl Sampler {
             nets: Networks::new_with_refreshed_list().ok(),
             disks: Disks::new_with_refreshed_list().ok(),
             comps: Components::new_with_refreshed_list().ok(),
-            gpus: Gpus::new_with_refreshed_list().ok(),
             last: Instant::now(),
         }
     }
@@ -144,25 +154,28 @@ impl Sampler {
                 .collect()
         });
 
-        // PCI list is the source of truth for *which* GPUs exist; NVML (via sysinfo) adds usage/VRAM.
-        let nvml: Vec<_> = self.gpus.as_mut().map_or_else(Vec::new, |g| {
-            g.refresh(true);
-            g.iter().map(|g| (g.model().unwrap_or("NVIDIA GPU").to_string(), g.usage(), g.used_memory(), g.total_memory())).collect()
-        });
-        let mut nvml = nvml.into_iter();
-        let gpus = gpu::read_pci()
-            .into_iter()
+        // PCI list is the source of truth for *which* GPUs exist; NVML adds NVIDIA readings,
+        // but only for cards already awake.
+        let pci = gpu::read_pci();
+        let nv_slots: Vec<&str> =
+            pci.iter().filter(|p| p.vendor == "NVIDIA" && p.driver.as_deref() == Some("nvidia") && gpu::awake(&p.slot)).map(|p| p.slot.as_str()).collect();
+        let nv = if nv_slots.is_empty() { vec![] } else { gpu::nvml_read(&nv_slots) };
+        let gpus = pci
+            .iter()
             .map(|p| {
-                let n = (p.vendor == "NVIDIA").then(|| nvml.next()).flatten();
+                let n = nv_slots.iter().position(|s| *s == p.slot).and_then(|i| nv[i].clone()).unwrap_or_default();
                 GpuStat {
-                    name: n.as_ref().map_or_else(|| format!("{} GPU", p.vendor), |n| n.0.clone()),
+                    name: n.name.unwrap_or_else(|| format!("{} GPU", p.vendor)),
                     vendor: p.vendor,
-                    driver: p.driver,
-                    cur_mhz: p.cur_mhz,
-                    max_mhz: p.max_mhz,
-                    usage: n.as_ref().and_then(|n| n.1),
-                    vram_used: n.as_ref().and_then(|n| n.2),
-                    vram_total: n.as_ref().and_then(|n| n.3),
+                    driver: p.driver.clone(),
+                    cur_mhz: n.cur_mhz.or(p.cur_mhz),
+                    max_mhz: n.max_mhz.or(p.max_mhz),
+                    usage: n.usage,
+                    vram_used: n.vram_used,
+                    vram_total: n.vram_total,
+                    temp_c: n.temp_c,
+                    power_w: n.power_w,
+                    asleep: p.driver.is_some() && !gpu::awake(&p.slot),
                 }
             })
             .collect();
