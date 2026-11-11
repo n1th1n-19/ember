@@ -17,10 +17,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check tag matches Cargo.toml
         run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
-      - name: Build .deb
-        id: deb
-        run: echo "path=$(packaging/build-deb.sh)" >> "$GITHUB_OUTPUT"
+      - name: Build .deb packages
+        run: packaging/build-deb.sh
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.deb.outputs.path }}
+          files: target/debs/*.deb
           body_path: CHANGELOG.md

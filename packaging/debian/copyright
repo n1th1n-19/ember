@@ -10,9 +10,9 @@ License: GPL-3.0-or-later
 Files: res/fonts/Bangers-Regular.ttf res/fonts/SpaceGrotesk.ttf
 Copyright: The Bangers Project Authors; The Space Grotesk Project Authors
 License: OFL-1.1
- See /usr/share/doc/ember/fonts/.
+ See /usr/share/doc/ember-common/fonts/.
 
 Files: res/fonts/PermanentMarker-Regular.ttf
 Copyright: Font Diner
 License: Apache-2.0
- See /usr/share/doc/ember/fonts/.
+ See /usr/share/doc/ember-common/fonts/.

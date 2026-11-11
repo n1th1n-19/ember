@@ -17,8 +17,7 @@ use ember_ui::mini::Key;
 use crate::Message;
 use ember_ui::widgets::{banner, body, caption, card, comic_button, heading, muted, page};
 
-pub const APPLET_ID: &str = "io.github.n1th1n_19.Ember.Applet";
-const WIDGET_DESKTOP: &str = "io.github.n1th1n_19.Ember.Widget.desktop";
+use ember_ui::setup::{self, APPLETS};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -34,8 +33,10 @@ pub enum Msg {
     StartWidget,
     StopWidget,
     Autostart(bool),
-    Panel(bool),
-    EmberApplets(bool),
+    /// one applet in/out of the top panel (by name)
+    PanelApplet(&'static str, bool),
+    /// every Ember applet in, or all out (COSMIC's back)
+    PanelAll(bool),
 }
 
 pub struct Settings {
@@ -51,41 +52,9 @@ impl Settings {
 
 // ---------- files & processes ----------
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
-}
-
-fn config_home() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home().join(".config"))
-}
-
 /// Installed binary next to this one (dev build or ~/.local/bin), else /usr/bin.
 fn bin(name: &str) -> PathBuf {
     std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join(name))).filter(|p| p.exists()).unwrap_or_else(|| Path::new("/usr/bin").join(name))
-}
-
-fn autostart_file() -> PathBuf {
-    config_home().join("autostart").join(WIDGET_DESKTOP)
-}
-
-pub fn autostart_enabled() -> bool {
-    autostart_file().exists()
-}
-
-pub fn set_autostart(on: bool) -> Result<(), String> {
-    let f = autostart_file();
-    if !on {
-        return match fs::remove_file(&f) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
-            _ => Ok(()),
-        };
-    }
-    fs::create_dir_all(f.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
-    let entry = format!(
-        "[Desktop Entry]\nName=Ember desktop widget\nComment=Live system readings pinned to the desktop\nType=Application\nExec={}\nIcon=io.github.n1th1n_19.Ember\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
-        bin("ember-widget").display()
-    );
-    fs::write(&f, entry).map_err(|e| e.to_string())
 }
 
 /// PIDs of our own running ember-widget processes.
@@ -124,121 +93,6 @@ pub fn stop_widget() {
         // SAFETY: plain syscall on our own process
         unsafe { libc::kill(pid, libc::SIGTERM) };
     }
-}
-
-// ---------- top panel ----------
-
-fn panel_wings() -> PathBuf {
-    config_home().join("cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings")
-}
-
-pub fn in_panel() -> bool {
-    fs::read_to_string(panel_wings()).is_ok_and(|s| s.contains(&format!("\"{APPLET_ID}\"")))
-}
-
-/// Add/remove the applet at the start of the panel's right wing. Edits only that one
-/// entry (a backup of the original is kept in ~/.local/state/ember/ the first time).
-pub fn set_in_panel(on: bool) -> Result<(), String> {
-    let path = panel_wings();
-    let text = fs::read_to_string(&path).map_err(|_| "COSMIC top panel config not found.".to_string())?;
-    let new = edit_wings(&text, on).ok_or("Unexpected panel config layout; add the applet in COSMIC Settings > Desktop > Panel instead.")?;
-    let backup = home().join(".local/state/ember/panel-backup-plugins_wings.ron");
-    if !backup.exists() {
-        let _ = fs::create_dir_all(backup.parent().unwrap_or(Path::new(".")));
-        let _ = fs::write(&backup, &text);
-    }
-    fs::write(&path, new).map_err(|e| e.to_string())
-}
-
-/// Pure edit of a `plugins_wings` RON value: `Some(([left...], [right...]))`.
-pub fn edit_wings(text: &str, add: bool) -> Option<String> {
-    let entry = format!("\"{APPLET_ID}\"");
-    let has = text.contains(&entry);
-    if add == has {
-        return Some(text.to_string());
-    }
-    if !add {
-        let out: String = text.lines().filter(|l| l.trim().trim_end_matches(',') != entry).map(|l| format!("{l}\n")).collect();
-        let out = out.replace(&format!("{entry}, "), "").replace(&format!(", {entry}"), "").replace(&entry, "");
-        return Some(out.trim_end().to_string());
-    }
-    // right wing starts after the first "], [" (multi-line) or "], [" inline
-    let i = text.find("], [")?;
-    let (head, tail) = text.split_at(i + 4);
-    if tail.trim_start().starts_with(']') { Some(format!("{head}\n    {entry},\n{}", tail.trim_start())) } else { Some(format!("{head}\n    {entry},{tail}")) }
-}
-
-// ---------- swapping COSMIC's panel applets for Ember's ----------
-
-const E: &str = "io.github.n1th1n_19.Ember.Applet";
-/// stock applet → Ember replacement, same spot in the panel
-pub const SWAPS: [(&str, &str); 7] = [
-    ("com.system76.CosmicAppletTime", "io.github.n1th1n_19.Ember.Applet.Clock"),
-    ("com.system76.CosmicAppletTiling", "io.github.n1th1n_19.Ember.Applet.Tiling"),
-    ("com.system76.CosmicAppletAudio", "io.github.n1th1n_19.Ember.Applet.Sound"),
-    ("com.system76.CosmicAppletBluetooth", "io.github.n1th1n_19.Ember.Applet.Bluetooth"),
-    ("com.system76.CosmicAppletNetwork", "io.github.n1th1n_19.Ember.Applet.Network"),
-    ("com.system76.CosmicAppletBattery", "io.github.n1th1n_19.Ember.Applet.Power"),
-    ("com.system76.CosmicAppletPower", "io.github.n1th1n_19.Ember.Applet.Session"),
-];
-const DND: &str = "io.github.n1th1n_19.Ember.Applet.Dnd";
-const EXTRAS: [&str; 2] = ["io.github.n1th1n_19.Ember.Applet.Media", "io.github.n1th1n_19.Ember.Applet.Awake"];
-
-pub fn ember_applets_on() -> bool {
-    fs::read_to_string(panel_wings()).is_ok_and(|s| s.contains(&format!("\"{}\"", SWAPS[0].1)) || s.contains(&format!("\"{DND}\"")))
-}
-
-/// Pure edit of `plugins_wings`: swap stock applets for Ember's in place (on) or back
-/// (off). DND goes beside COSMIC's notifications applet (which keeps the history);
-/// media and keep-awake go after Ember's readings, or start the right wing.
-pub fn edit_ember_applets(text: &str, on: bool) -> Option<String> {
-    let q = |id: &str| format!("\"{id}\"");
-    let mut s = text.to_string();
-    if !s.contains("], [") {
-        return None;
-    }
-    let indent = "    ";
-    if on {
-        for (stock, ember) in SWAPS {
-            s = s.replace(&q(stock), &q(ember));
-        }
-        if !s.contains(&q(DND)) {
-            let notif = q("com.system76.CosmicAppletNotifications");
-            s = match s.find(&format!("{indent}{notif}")) {
-                Some(i) => format!("{}{indent}{},\n{}", &s[..i], q(DND), &s[i..]),
-                None => s.replacen("], [\n", &format!("], [\n{indent}{},\n", q(DND)), 1),
-            };
-        }
-        let extras: String = EXTRAS.iter().filter(|e| !s.contains(&q(e))).map(|e| format!("{indent}{},\n", q(e))).collect();
-        if !extras.is_empty() {
-            let readings = format!("{indent}{},\n", q(E));
-            s = match s.find(&readings) {
-                Some(i) => format!("{}{extras}{}", &s[..i + readings.len()], &s[i + readings.len()..]),
-                None => s.replacen("], [\n", &format!("], [\n{extras}"), 1),
-            };
-        }
-    } else {
-        for (stock, ember) in SWAPS {
-            s = s.replace(&q(ember), &q(stock));
-        }
-        for gone in std::iter::once(DND).chain(EXTRAS) {
-            s = s.lines().filter(|l| l.trim().trim_end_matches(',') != q(gone)).map(|l| format!("{l}\n")).collect::<String>();
-            s = s.trim_end().to_string();
-        }
-    }
-    Some(s)
-}
-
-pub fn set_ember_applets(on: bool) -> Result<(), String> {
-    let path = panel_wings();
-    let text = fs::read_to_string(&path).map_err(|_| "COSMIC top panel config not found.".to_string())?;
-    let new = edit_ember_applets(&text, on).ok_or("Unexpected panel config layout.")?;
-    let backup = home().join(".local/state/ember/panel-backup-plugins_wings.ron");
-    if !backup.exists() {
-        let _ = fs::create_dir_all(backup.parent().unwrap_or(Path::new(".")));
-        let _ = fs::write(&backup, &text);
-    }
-    fs::write(&path, new).map_err(|e| e.to_string())
 }
 
 // ---------- update & view ----------
@@ -280,25 +134,23 @@ impl Settings {
             }
             Msg::Autostart(on) => {
                 save = false;
-                self.status = Some(match set_autostart(on) {
+                self.status = Some(match setup::set_autostart(on, &bin("ember-widget")) {
                     Ok(()) => (if on { "Widget will start when you log in." } else { "Widget won't start at login." }.into(), false),
                     Err(e) => (format!("Couldn't change autostart: {e}"), true),
                 });
             }
-            Msg::EmberApplets(on) => {
+            Msg::PanelApplet(name, on) => {
                 save = false;
-                self.status = Some(match set_ember_applets(on) {
-                    Ok(()) => (
-                        if on { "Ember's applets are in the panel. COSMIC's originals are one click away." } else { "COSMIC's own applets are back." }.into(),
-                        false,
-                    ),
+                let ap = setup::by_name(name).into_iter().collect::<Vec<_>>();
+                self.status = Some(match setup::set_panel(&ap, on) {
+                    Ok(()) => (format!("{} {} the top panel.", name, if on { "added to" } else { "removed from" }), false),
                     Err(e) => (e, true),
                 });
             }
-            Msg::Panel(on) => {
+            Msg::PanelAll(on) => {
                 save = false;
-                self.status = Some(match set_in_panel(on) {
-                    Ok(()) => (if on { "Added to the top panel." } else { "Removed from the top panel." }.into(), false),
+                self.status = Some(match setup::set_panel(&APPLETS, on) {
+                    Ok(()) => (if on { "All Ember applets are in the panel." } else { "COSMIC's own applets are back." }.into(), false),
                     Err(e) => (e, true),
                 });
             }
@@ -336,7 +188,7 @@ impl Settings {
             .push(muted("Off freezes every loop; the art still shows the current state."));
 
         let running = widget_running();
-        let autostart = autostart_enabled();
+        let autostart = setup::autostart_enabled();
         let mut corners = row::with_capacity(5).spacing(10).align_y(Alignment::Center).push(body("Corner"));
         for k in Corner::ALL {
             corners = corners.push(pick(k.name(), Msg::Corner(k), CYAN, c.widget_corner == k));
@@ -390,32 +242,27 @@ impl Settings {
             )
             .push(wkeys);
 
-        let in_panel = in_panel();
-        let mut akeys = row::with_capacity(8).spacing(8).align_y(Alignment::Center).push(body("Shows"));
+        let present = setup::in_panel(&APPLETS);
+        let mut chips = row::with_capacity(APPLETS.len()).spacing(8);
+        for ap in APPLETS {
+            let on = present.contains(&ap);
+            chips = chips.push(comic_button(ap.name, Some(msg(Msg::PanelApplet(ap.name, !on))), YELLOW, on));
+        }
+        let mut akeys = row::with_capacity(8).spacing(8).align_y(Alignment::Center).push(body("Readings shows"));
         for k in Key::ALL {
             akeys = akeys.push(comic_button(k.short(), Some(msg(Msg::AppletKey(k))), MAGENTA, c.applet().contains(&k)));
         }
-        let applet_col = column::with_capacity(4)
+        let applet_col = column::with_capacity(6)
             .spacing(12)
-            .push(heading("Panel applet"))
-            .push(muted("Small ink meters in the top panel; click them for a popup with every reading."))
+            .push(heading("Panel applets"))
+            .push(muted("Highlighted ones are in your top panel; click to add or remove. Ember's clock, sound, Bluetooth, network, power, tiling and session take the place of COSMIC's; removing one puts COSMIC's back."))
+            .push(chips.wrap())
             .push(
-                row::with_capacity(3)
+                row::with_capacity(2)
                     .spacing(12)
-                    .align_y(Alignment::Center)
-                    .push(body("Readings in top panel"))
-                    .push(pick("Yes", Msg::Panel(true), YELLOW, in_panel))
-                    .push(pick("No", Msg::Panel(false), YELLOW, !in_panel)),
+                    .push(comic_button("All Ember's", Some(msg(Msg::PanelAll(true))), CYAN, false))
+                    .push(comic_button("All COSMIC's", Some(msg(Msg::PanelAll(false))), CYAN, false)),
             )
-            .push(
-                row::with_capacity(3)
-                    .spacing(12)
-                    .align_y(Alignment::Center)
-                    .push(body("Clock, sound, Bluetooth, network, power, tiling, session"))
-                    .push(pick("Ember's", Msg::EmberApplets(true), YELLOW, ember_applets_on()))
-                    .push(pick("COSMIC's", Msg::EmberApplets(false), YELLOW, !ember_applets_on())),
-            )
-            .push(muted("Ember's versions take the same spots, plus Do Not Disturb, media and keep-awake. COSMIC's notification list stays."))
             .push(akeys);
 
         let mut col = column::with_capacity(5).spacing(22).push(caption("Settings"));
@@ -423,36 +270,5 @@ impl Settings {
             col = col.push(banner(t, *e));
         }
         page(col.push(card(look)).push(card(widget_col)).push(card(applet_col)))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const REAL: &str =
-        "Some(([\n    \"com.system76.CosmicAppList\",\n], [\n    \"com.system76.CosmicAppletTime\",\n    \"com.system76.CosmicAppletPower\",\n]))";
-
-    #[test]
-    fn panel_wings_edit_roundtrip() {
-        let added = edit_wings(REAL, true).unwrap();
-        assert!(added.contains("], [\n    \"io.github.n1th1n_19.Ember.Applet\",\n    \"com.system76.CosmicAppletTime\""), "{added}");
-        assert_eq!(edit_wings(&added, true).unwrap(), added); // idempotent
-        assert_eq!(edit_wings(&added, false).unwrap(), REAL);
-
-        let empty = edit_wings("Some(([], []))", true).unwrap();
-        assert_eq!(empty, "Some(([], [\n    \"io.github.n1th1n_19.Ember.Applet\",\n]))");
-        assert_eq!(edit_wings("None", true), None);
-    }
-
-    #[test]
-    fn ember_applets_swap_roundtrip() {
-        let stock = "Some(([\n    \"com.system76.CosmicAppList\",\n], [\n    \"io.github.n1th1n_19.Ember.Applet\",\n    \"com.system76.CosmicAppletTime\",\n    \"io.github.marcelogomes90.cosmic-ext-applet-clip-keep\",\n    \"com.system76.CosmicAppletAudio\",\n    \"com.system76.CosmicAppletNotifications\",\n    \"com.system76.CosmicAppletPower\",\n]))";
-        let on = edit_ember_applets(stock, true).unwrap();
-        let expect = "Some(([\n    \"com.system76.CosmicAppList\",\n], [\n    \"io.github.n1th1n_19.Ember.Applet\",\n    \"io.github.n1th1n_19.Ember.Applet.Media\",\n    \"io.github.n1th1n_19.Ember.Applet.Awake\",\n    \"io.github.n1th1n_19.Ember.Applet.Clock\",\n    \"io.github.marcelogomes90.cosmic-ext-applet-clip-keep\",\n    \"io.github.n1th1n_19.Ember.Applet.Sound\",\n    \"io.github.n1th1n_19.Ember.Applet.Dnd\",\n    \"com.system76.CosmicAppletNotifications\",\n    \"io.github.n1th1n_19.Ember.Applet.Session\",\n]))";
-        assert_eq!(on, expect);
-        assert_eq!(edit_ember_applets(&on, true).unwrap(), on); // idempotent
-        assert_eq!(edit_ember_applets(&on, false).unwrap(), stock);
-        assert_eq!(edit_ember_applets("None", true), None);
     }
 }

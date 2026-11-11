@@ -410,8 +410,8 @@ fn quick_task(t: cosmic::iced::Task<ember_ui::quick::Msg>) -> Task<Message> {
 }
 
 /// Headless setup used by install.sh (same code paths as the Settings page):
-///   ember --setup-panel     readings + Ember applets in the top panel
-///   ember --restore-panel   COSMIC's own applets back, Ember's removed
+///   ember --setup-panel [names|all]     add Ember applets to the top panel
+///   ember --restore-panel [names|all]   remove them, putting COSMIC's back
 ///   ember --widget-autostart on|off
 /// Returns Some(exit code) when a setup flag was handled.
 fn setup_flags(args: &[String]) -> Option<i32> {
@@ -426,14 +426,23 @@ fn setup_flags(args: &[String]) -> Option<i32> {
         }
     };
     match args.get(1).map(String::as_str)? {
-        "--setup-panel" => Some(report("Ember applets added to the top panel", settings::set_in_panel(true).and(settings::set_ember_applets(true)))),
-        "--restore-panel" => Some(report("COSMIC's panel applets restored", settings::set_ember_applets(false).and(settings::set_in_panel(false)))),
+        "--setup-panel" | "--restore-panel" => {
+            let on = args[1] == "--setup-panel";
+            let list = match ember_ui::setup::parse_list(args.get(2).map_or("all", String::as_str)) {
+                Ok(l) => l,
+                Err(e) => return Some(report("panel setup", Err(e))),
+            };
+            Some(report(if on { "Ember applets added to the top panel" } else { "COSMIC's panel applets restored" }, ember_ui::setup::set_panel(&list, on)))
+        }
         "--widget-autostart" => {
             let on = args.get(2).map(String::as_str) == Some("on");
             if !on {
                 settings::stop_widget();
             }
-            Some(report(if on { "widget will start at login" } else { "widget autostart removed" }, settings::set_autostart(on)))
+            Some(report(
+                if on { "widget will start at login" } else { "widget autostart removed" },
+                ember_ui::setup::set_autostart(on, &ember_ui::setup::sibling_bin("ember-widget")),
+            ))
         }
         _ => None,
     }

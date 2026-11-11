@@ -188,6 +188,20 @@ impl Widget {
 }
 
 fn main() -> cosmic::iced::Result {
+    // `ember-widget --autostart on|off`: start at login or not
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--autostart") {
+        let on = args.get(2).map(String::as_str) == Some("on");
+        let exe = std::env::current_exe().unwrap_or_else(|_| "/usr/bin/ember-widget".into());
+        match ember_ui::setup::set_autostart(on, &exe) {
+            Ok(()) => println!("ember-widget: autostart {}", if on { "on" } else { "off" }),
+            Err(e) => {
+                eprintln!("ember-widget: {e}");
+                std::process::exit(1);
+            }
+        }
+        std::process::exit(0);
+    }
     ink::load_fonts();
     ink::set_dark(EmberConfig::load().dark);
     cosmic::app::run::<Widget>(Settings::default().no_main_window(true).transparent(true).exit_on_close(false), ())

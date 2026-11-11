@@ -33,4 +33,4 @@ cargo test --workspace
 ## Release
 
 Bump `version` in `Cargo.toml`, add a `CHANGELOG.md` entry, tag `vX.Y.Z`. CI builds the
-`.deb` with `packaging/build-deb.sh` and attaches it to the GitHub release.
+packages with `packaging/build-deb.sh` and attaches them to the GitHub release.

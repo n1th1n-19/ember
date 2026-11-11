@@ -43,19 +43,28 @@ Pop!_OS 24.04 or Ubuntu 24.04 with COSMIC (other Debian-based COSMIC setups shou
 curl -fsSL https://raw.githubusercontent.com/n1th1n-19/ember/main/install.sh | bash
 ```
 
-The script shows everything it will do and asks first. It installs one package, `ember`:
+It asks which parts you want, shows what it will install, and asks before changing anything.
+Every part is its own package, so take only what you need:
 
-| Where | What |
-|---|---|
-| `/usr/bin/` | `ember`, `ember-applet`, `ember-widget`, `emberd`, `ember-install` |
-| `/usr/libexec/ember/ember-helper` | small root helper, only run through a polkit password prompt |
-| `/usr/share/applications/` | the app, 11 panel applets, the widget |
-| `/usr/share/icons/hicolor/` | the icon |
-| `/usr/share/polkit-1/actions/` | the helper's polkit policy |
-| `/usr/lib/systemd/user/ember.service` | history and alerts service |
+| Part | Package | What you get |
+|---|---|---|
+| `app` | `ember` | the Ember window; root helper `/usr/libexec/ember/ember-helper` (only via a polkit password prompt) |
+| `service` | `ember-service` | `emberd`: one hour of history for the charts, and alerts |
+| `widget` | `ember-widget` | the desktop widget |
+| `readings` `clock` `sound` `bluetooth` `network` `power` `dnd` `tiling` `session` `media` `awake` | `ember-applet-<name>` | one COSMIC panel applet each (they share the `ember-applet` engine) |
+| everything | `ember-full` | all of the above |
 
-Then it asks, one by one, whether to start the service for your user, put Ember's applets
-in your top panel (in place of COSMIC's, with a backup), and start the desktop widget at login.
+`ember-common` (icon, licenses, `ember-install`) comes with any part. Skip the questions
+by naming parts:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/n1th1n-19/ember/main/install.sh | bash -s -- --only app,widget,sound,clock
+```
+
+Applets you install can go straight into your top panel. Ember's clock, sound, Bluetooth,
+network, power, tiling and session take the place of COSMIC's; removing one puts COSMIC's
+back. You can also do it yourself: `ember-applet --setup-panel sound,clock` and
+`ember-applet --restore-panel sound,clock`, or from Ember's Settings.
 
 ### Update
 
@@ -63,7 +72,7 @@ in your top panel (in place of COSMIC's, with a backup), and start the desktop w
 curl -fsSL https://raw.githubusercontent.com/n1th1n-19/ember/main/install.sh | bash -s -- --update
 ```
 
-Installs the latest release, deletes files that newer versions no longer use, and restarts
+Updates every installed Ember part, deletes files newer versions no longer use, and restarts
 the service, widget and applets.
 
 ### Uninstall
@@ -73,11 +82,13 @@ curl -fsSL https://raw.githubusercontent.com/n1th1n-19/ember/main/install.sh | b
 ```
 
 Removes everything Ember ever put on your machine: puts COSMIC's panel applets back,
-un-hides launchers you hid with Ember, removes the package, your Ember settings, history and
-caches, then lists anything it couldn't remove (normally nothing).
+un-hides launchers you hid with Ember, removes all Ember packages, your Ember settings,
+history and caches, then lists anything it couldn't remove (normally nothing). Remove just
+some parts with `--uninstall --only widget,sound`.
 
-Installed? `ember-install --update` and `ember-install --uninstall` do the same.
-Add `--dry-run` to see what would happen, or `--yes` to skip the questions.
+Once installed, `ember-install` does all of this offline: `ember-install --only service`,
+`ember-install --update`, `ember-install --uninstall`. Add `--dry-run` to see what would
+happen, or `--yes` to skip the questions.
 
 ## Permissions
 
@@ -91,7 +102,7 @@ with validated arguments. See [SECURITY.md](SECURITY.md).
 ```sh
 sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev
 cargo run -p ember
-packaging/build-deb.sh          # builds target/ember_<version>_amd64.deb
+packaging/build-deb.sh          # builds every package into target/debs/
 ```
 
 More in [CONTRIBUTING.md](CONTRIBUTING.md). The look is specified in [DESIGN.md](DESIGN.md).

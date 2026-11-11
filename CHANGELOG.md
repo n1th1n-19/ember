@@ -15,4 +15,5 @@ First release.
 - Quick panel and COSMIC panel applets: clock, sound, Bluetooth, network, power,
   Do Not Disturb, tiling, session, media, keep awake, live readings.
 - Desktop widget with live placement from Settings.
-- Installer with install, update and full uninstall.
+- Separate packages for the app, service, widget and each panel applet, plus `ember-full`.
+- Installer that installs, updates or removes all of Ember or just chosen parts.
