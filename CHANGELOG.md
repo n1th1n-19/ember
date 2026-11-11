@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 — 2026-11-12
 
 - Battery: when the charger is plugged in but the firmware holds the charge (Long Life mode
   or a charge limit), the page says so and shows "0 W · on charger" instead of a bare 0 W.
