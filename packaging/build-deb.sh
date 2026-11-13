@@ -37,7 +37,7 @@ pkg() {
         "$name" "$VERSION" "$VERSION" "$HOME_URL" "$MAINT" "$RELEASE_DATE" | gzip -9n > "$STAGE/$name.changelog.gz"
     install -Dm644 "$STAGE/$name.changelog.gz" "$R/usr/share/doc/$name/changelog.gz"
     mkdir -p "$R/DEBIAN"
-    for s in postinst postrm; do [[ -f "packaging/debian/$name.$s" ]] && install -m755 "packaging/debian/$name.$s" "$R/DEBIAN/$s"; done
+    for s in postinst prerm postrm; do [[ -f "packaging/debian/$name.$s" ]] && install -m755 "packaging/debian/$name.$s" "$R/DEBIAN/$s"; done
     {
         echo "Package: $name"
         echo "Version: $VERSION"
@@ -74,6 +74,7 @@ install -Dm755 target/release/ember "$R/usr/bin/ember"
 install -Dm755 target/release/ember-helper "$R/usr/libexec/ember/ember-helper"
 install -Dm644 res/applications/io.github.n1th1n_19.Ember.desktop "$R/usr/share/applications/io.github.n1th1n_19.Ember.desktop"
 install -Dm644 res/polkit/io.github.n1th1n_19.Ember.helper.policy "$R/usr/share/polkit-1/actions/io.github.n1th1n_19.Ember.helper.policy"
+install -Dm644 res/systemd/ember-firmware.service "$R/usr/lib/systemd/system/ember-firmware.service"
 install -Dm644 res/metainfo/io.github.n1th1n_19.Ember.metainfo.xml "$R/usr/share/metainfo/io.github.n1th1n_19.Ember.metainfo.xml"
 pkg ember "$ARCH" "$COMMON, $LIBS, pkexec | policykit-1" "ember-service, pulseaudio-utils, network-manager, bluez, rfkill, libglib2.0-bin, system76-power" \
     "comic-style system monitor and control center for COSMIC" \

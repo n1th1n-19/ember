@@ -12,10 +12,12 @@ use ember_core::calendar::{self, MONTHS, WEEKDAYS};
 use ember_core::control::CtlResult;
 use ember_core::control::bluetooth::{self, BtState};
 use ember_core::control::desktop::{self, Brightness, SessionAction};
+use ember_core::control::firmware::{self, FwAttr};
 use ember_core::control::media::{self, Cmd, Player};
 use ember_core::control::network::{self, NetState};
 use ember_core::control::power::{self, PowerState, Profile};
 use ember_core::control::sound::{self, Device, Kind};
+use ember_core::control::{cpu, helper};
 use std::sync::Arc;
 
 use crate::glyphs::Glyph;
@@ -70,6 +72,9 @@ pub enum Msg {
     Keyboard(f32),
     ApplyDisplay,
     ApplyKeyboard,
+    Thermal(String),
+    FwEdit(usize, u32),
+    FwApply(usize),
     // desktop
     Dnd(bool),
     Autotile(bool),
@@ -96,6 +101,9 @@ pub struct Quick {
     bt: Option<BtState>,
     bright: Brightness,
     power: Option<PowerState>,
+    /// firmware fan mode (current, choices) and custom-mode limits with slider values
+    thermal: (Option<String>, Vec<String>),
+    fw: Vec<(FwAttr, u32)>,
     month: Option<(i32, u32)>,
     confirm: Option<SessionAction>,
     /// network waiting for a password: (ssid, wpa3), and what's typed so far
@@ -163,6 +171,11 @@ impl Quick {
             self.battery = ember_core::battery::read_all().into_iter().next();
             t.push(cosmic::task::future(async { wrap(Msg::Bright(desktop::read_brightness().await)) }));
             t.push(cosmic::task::future(async { wrap(Msg::Power(power::read().await)) }));
+            // writing these needs the root helper, which ships with the ember app package
+            if helper::path().exists() {
+                self.thermal = cpu::thermal();
+                self.fw = firmware::refresh(&self.fw);
+            }
         }
         if has(Section::Media) {
             t.push(cosmic::task::future(async { wrap(Msg::Media(media::read().await.ok().flatten())) }));
@@ -300,6 +313,18 @@ impl Quick {
                 self.password.clear();
             }
             Msg::Profile(p) => return act(format!("Power profile: {}", p.name()), async move { power::set_profile(p).await }),
+            Msg::Thermal(t) => return act_blocking(format!("Fan mode: {}", cpu::thermal_label(&t)), move || helper::run(&["thermal".into(), t])),
+            Msg::FwEdit(i, v) => {
+                if let Some(e) = self.fw.get_mut(i) {
+                    e.1 = v;
+                }
+            }
+            Msg::FwApply(i) => {
+                if let Some((a, v)) = self.fw.get(i).filter(|(a, v)| a.value != *v) {
+                    let args = vec!["fwattr".into(), a.device.clone(), a.name.clone(), v.to_string()];
+                    return act_blocking(format!("{} set to {v} {}", a.label, a.unit()), move || helper::run(&args));
+                }
+            }
             Msg::Display(v) => self.bright.display = Some(v),
             Msg::Keyboard(v) => self.bright.keyboard = Some(v),
             Msg::ApplyDisplay => {
@@ -587,6 +612,26 @@ impl Quick {
                 r = r.push(comic_button(pr.name(), (p.profile != Some(pr)).then_some(Msg::Profile(pr)), YELLOW, p.profile == Some(pr)));
             }
             col = col.push(r.wrap());
+        }
+        let (cur, modes) = &self.thermal;
+        if !modes.is_empty() {
+            let mut r = row::with_capacity(5).spacing(10);
+            for m in modes {
+                let on = cur.as_ref() == Some(m);
+                r = r.push(comic_button(cpu::thermal_label(m), (!on).then(|| Msg::Thermal(m.clone())), CYAN, on));
+            }
+            col = col.push(muted("Fan mode")).push(r.wrap());
+        }
+        // custom limits only when they apply: in Custom mode, or on machines without fan modes
+        if cur.as_deref() == Some("custom") || modes.is_empty() {
+            for (i, (a, v)) in self.fw.iter().enumerate() {
+                col = col.push(
+                    column::with_capacity(2)
+                        .spacing(4)
+                        .push(row::with_capacity(2).push(widget::container(body(a.label.clone())).width(Length::Fill)).push(body(format!("{v} {}", a.unit()))))
+                        .push(widget::slider(a.min..=a.max, *v, move |n| Msg::FwEdit(i, n)).step(a.step).on_release(Msg::FwApply(i)).width(Length::Fill)),
+                );
+            }
         }
         if let Some(v) = self.bright.display {
             col = col.push(Self::slider_block(Glyph::Bulb, "Screen", v, 1.0, Msg::Display, Msg::ApplyDisplay, None));

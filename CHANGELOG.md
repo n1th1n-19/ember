@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4 — 2026-11-14
+
+- Fan mode: Control page and the Power applet switch the firmware thermal mode
+  (`platform_profile`: Quiet, Balanced, Performance, Extreme, Custom on Lenovo; whatever
+  the laptop offers elsewhere).
+- Custom mode: sliders for the firmware's CPU/GPU power and temperature limits
+  (`/sys/class/firmware-attributes`, e.g. PL1/PL2, cTGP, thermal limits on Lenovo LOQ/Legion),
+  bounded by the min/max the firmware reports. They apply in Custom mode.
+- Fan mode and custom limits are saved to `/etc/ember/firmware.conf` and re-applied at boot
+  by the new `ember-firmware.service` (enabled by the `ember` package, removed on purge).
+
 ## 0.1.3 — 2026-11-12
 
 - Battery: when the charger is plugged in but the firmware holds the charge (Long Life mode

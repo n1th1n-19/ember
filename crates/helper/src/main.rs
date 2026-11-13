@@ -11,12 +11,21 @@
 //!   renice <pid> <-20..=19>
 //!   signal <pid> <TERM|KILL|STOP|CONT>
 //!   pwm <hwmonN> <1..=9> <0..=255>   only if that pwm node exists
+//!   thermal <name>               name must be in platform_profile_choices
+//!   fwattr <device> <attr> <n>   integer firmware attribute, n within its min/max
+//!   restore                      re-apply saved thermal/fwattr settings (run at boot)
+//!
+//! Successful thermal/fwattr changes are saved to /etc/ember/firmware.conf, one
+//! command per line; `restore` re-parses each line through the same validation.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const CPU: &str = "/sys/devices/system/cpu";
 const HWMON: &str = "/sys/class/hwmon";
+const ACPI: &str = "/sys/firmware/acpi";
+const FWATTR: &str = "/sys/class/firmware-attributes";
+const SAVED: &str = "/etc/ember/firmware.conf";
 
 #[derive(Debug, PartialEq)]
 enum Action {
@@ -26,6 +35,9 @@ enum Action {
     Renice(i32, i32),
     Signal(i32, libc::c_int),
     Pwm(u32, u8, u8),
+    Thermal(String),
+    FwAttr(String, String, u32),
+    Restore,
 }
 
 fn num<T: std::str::FromStr>(s: &str, what: &str) -> Result<T, String> {
@@ -79,7 +91,21 @@ fn parse(args: &[String]) -> Result<Action, String> {
             };
             Ok(Action::Pwm(n, idx, num(val, "pwm value")?))
         }
-        _ => Err("usage: ember-helper governor|max-perf|turbo|renice|signal|pwm ...".into()),
+        ["thermal", t] => {
+            if t.is_empty() || !t.bytes().all(|b| b.is_ascii_lowercase() || b == b'-') {
+                return Err(format!("bad thermal profile: {t:?}"));
+            }
+            Ok(Action::Thermal(t.to_string()))
+        }
+        ["fwattr", dev, attr, n] => {
+            let ok = |s: &str, extra: u8| !s.is_empty() && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == extra);
+            if !ok(dev, b'-') || !ok(attr, b'_') {
+                return Err(format!("bad firmware attribute: {dev:?}/{attr:?}"));
+            }
+            Ok(Action::FwAttr(dev.to_string(), attr.to_string(), num(n, "value")?))
+        }
+        ["restore"] => Ok(Action::Restore),
+        _ => Err("usage: ember-helper governor|max-perf|turbo|renice|signal|pwm|thermal|fwattr|restore ...".into()),
     }
 }
 
@@ -144,12 +170,87 @@ fn run(action: Action) -> Result<(), String> {
             }
             write(&node, &val.to_string())
         }
+        Action::Thermal(t) => {
+            let avail = fs::read_to_string(Path::new(ACPI).join("platform_profile_choices")).map_err(|_| "no platform_profile on this machine".to_string())?;
+            if !avail.split_whitespace().any(|a| a == t) {
+                return Err(format!("thermal profile {t} not available (have: {})", avail.trim()));
+            }
+            write(&Path::new(ACPI).join("platform_profile"), &t)
+        }
+        Action::FwAttr(dev, attr, n) => {
+            let dir = Path::new(FWATTR).join(&dev).join("attributes").join(&attr);
+            let get = |f: &str| -> Result<String, String> {
+                fs::read_to_string(dir.join(f)).map(|s| s.trim().to_string()).map_err(|_| format!("no firmware attribute {dev}/{attr}"))
+            };
+            if get("type")? != "integer" {
+                return Err(format!("{attr} is not an integer attribute"));
+            }
+            let lim = |f: &str| get(f).and_then(|v| v.parse::<u32>().map_err(|e| e.to_string()));
+            let (min, max) = (lim("min_value")?, lim("max_value")?);
+            if !(min..=max).contains(&n) {
+                return Err(format!("{attr} {n} out of range {min}..={max}"));
+            }
+            write(&dir.join("current_value"), &n.to_string())
+        }
+        Action::Restore => {
+            let Ok(conf) = fs::read_to_string(SAVED) else { return Ok(()) };
+            // limits only apply in the custom profile (or on machines without profiles)
+            let custom = || fs::read_to_string(Path::new(ACPI).join("platform_profile")).map_or(true, |p| p.trim() == "custom");
+            let mut errs = vec![];
+            for line in conf.lines().filter(|l| !l.trim().is_empty()) {
+                let args: Vec<String> = line.split_whitespace().map(String::from).collect();
+                let r = match parse(&args) {
+                    Ok(Action::FwAttr(..)) if !custom() => continue,
+                    Ok(a @ (Action::Thermal(_) | Action::FwAttr(..))) => run(a),
+                    Ok(_) => Err("not a saved setting".into()),
+                    Err(e) => Err(e),
+                };
+                if let Err(e) = r {
+                    errs.push(format!("{line}: {e}"));
+                }
+            }
+            if errs.is_empty() { Ok(()) } else { Err(errs.join("; ")) }
+        }
     }
+}
+
+/// Key a saved line replaces: "thermal", or "fwattr <device> <attr>".
+fn key(line: &str) -> String {
+    let w: Vec<&str> = line.split_whitespace().collect();
+    w[..w.len().min(if w.first() == Some(&"fwattr") { 3 } else { 1 })].join(" ")
+}
+
+/// Saved config with `line` replacing any line of the same key; thermal stays first
+/// so `restore` switches to the custom profile before writing its limits.
+fn merge(conf: &str, line: &str) -> String {
+    let k = key(line);
+    let mut lines: Vec<&str> = conf.lines().filter(|l| !l.trim().is_empty() && key(l) != k).collect();
+    lines.push(line);
+    lines.sort_by_key(|l| !l.starts_with("thermal"));
+    lines.join("\n") + "\n"
+}
+
+fn save(args: &[String]) -> Result<(), String> {
+    let path = Path::new(SAVED);
+    fs::create_dir_all(path.parent().unwrap_or(path)).map_err(|e| e.to_string())?;
+    let conf = merge(&fs::read_to_string(path).unwrap_or_default(), &args.join(" "));
+    let tmp = path.with_extension("tmp");
+    write(&tmp, &conf)?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match parse(&args).and_then(run) {
+    let r = parse(&args).and_then(|a| {
+        let persist = matches!(a, Action::Thermal(_) | Action::FwAttr(..));
+        run(a)?;
+        // the change itself worked; a failed save only means it won't survive a reboot
+        if persist && let Err(e) = save(&args) {
+            eprintln!("ember-helper: applied, but couldn't save for next boot: {e}");
+        }
+        Ok(())
+    });
+    match r {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("ember-helper: {e}");
@@ -174,6 +275,8 @@ mod tests {
         assert_eq!(p("renice 4242 -5"), Ok(Action::Renice(4242, -5)));
         assert_eq!(p("signal 4242 KILL"), Ok(Action::Signal(4242, libc::SIGKILL)));
         assert_eq!(p("pwm hwmon3 2 128"), Ok(Action::Pwm(3, 2, 128)));
+        assert_eq!(p("thermal max-power"), Ok(Action::Thermal("max-power".into())));
+        assert_eq!(p("fwattr lenovo-wmi-other-0 ppt_pl1_spl 70"), Ok(Action::FwAttr("lenovo-wmi-other-0".into(), "ppt_pl1_spl".into(), 70)));
     }
 
     #[test]
@@ -201,6 +304,13 @@ mod tests {
             "pwm ../hwmon3 1 10",
             "pwm hwmon3/../.. 1 10",
             "governor performance extra",
+            "thermal ../../etc/shadow",
+            "thermal Performance",
+            "thermal",
+            "fwattr ../x ppt_pl1_spl 70",
+            "fwattr lenovo-wmi-other-0 ../../power 1",
+            "fwattr lenovo-wmi-other-0 ppt_pl1_spl -5",
+            "fwattr lenovo-wmi-other-0 ppt_pl1_spl",
         ] {
             assert!(p(bad).is_err(), "should reject {bad:?}");
         }
@@ -211,5 +321,22 @@ mod tests {
         // parses (lowercase name) but is refused against scaling_available_governors
         let e = run(Action::Governor("rm".into())).unwrap_err();
         assert!(e.contains("not available") || e.contains("no cpufreq"), "{e}");
+    }
+
+    #[test]
+    fn merge_replaces_same_key_and_keeps_thermal_first() {
+        let c = merge("", "fwattr lenovo-wmi-other-0 ppt_pl1_spl 70");
+        let c = merge(&c, "thermal custom");
+        let c = merge(&c, "fwattr lenovo-wmi-other-0 ppt_pl1_spl 80");
+        let c = merge(&c, "fwattr lenovo-wmi-other-0 gpu_temp 80");
+        let c = merge(&c, "thermal performance");
+        assert_eq!(c, "thermal performance\nfwattr lenovo-wmi-other-0 ppt_pl1_spl 80\nfwattr lenovo-wmi-other-0 gpu_temp 80\n");
+        assert_eq!(p("restore"), Ok(Action::Restore));
+    }
+
+    #[test]
+    fn unknown_fwattr_rejected_before_any_write() {
+        let e = run(Action::FwAttr("nope-0".into(), "nope".into(), 1)).unwrap_err();
+        assert!(e.contains("no firmware attribute"), "{e}");
     }
 }

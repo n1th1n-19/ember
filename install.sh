@@ -273,7 +273,8 @@ do_install() {
 
     say ""
     say "${B}Will install these packages (needs your password):${N} ${PKGS[*]}"
-    ((SEL_APP)) && say "  /usr/bin/ember, /usr/libexec/ember/ember-helper (root helper, only via a polkit prompt), polkit policy, app launcher"
+    ((SEL_APP)) && say "  /usr/bin/ember, /usr/libexec/ember/ember-helper (root helper, only via a polkit prompt), polkit policy, app launcher,"
+    ((SEL_APP)) && say "  ember-firmware.service (boot: re-applies fan mode/limits saved in /etc/ember/firmware.conf)"
     ((SEL_SERVICE)) && say "  /usr/bin/emberd, /usr/lib/systemd/user/ember.service"
     ((SEL_WIDGET)) && say "  /usr/bin/ember-widget, widget launcher"
     ((${#SEL_APPLETS[@]})) && say "  /usr/bin/ember-applet, launchers for: ${SEL_APPLETS[*]}"
@@ -449,7 +450,7 @@ do_uninstall() {
     ((full)) || { stages_done "${G}Removed.${N}"; return; }
     local left
     left=$(find "$CONF" "$DATA" "$STATE" "$CACHE" "$HOME/.local/bin" /usr/bin /usr/libexec /usr/share/applications /usr/share/icons /usr/share/polkit-1 \
-        /usr/lib/systemd/user /usr/share/metainfo /usr/share/doc \( -name "$ID*" -o -name 'ember' -o -name 'ember-*' -o -name 'emberd' -o -name 'ember.service' \) \
+        /usr/lib/systemd/user /usr/lib/systemd/system /etc/ember /usr/share/metainfo /usr/share/doc \( -name "$ID*" -o -name 'ember' -o -name 'ember-*' -o -name 'emberd' -o -name 'ember.service' \) \
         -not -path "*/Documents/*" 2>/dev/null || true)
     if [[ -n "$left" ]]; then
         say "${Y}Still present (not removed automatically):${N}"

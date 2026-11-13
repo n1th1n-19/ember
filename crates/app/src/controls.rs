@@ -4,6 +4,7 @@ use cosmic::Element;
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, column, row};
+use ember_core::control::firmware::{self, FwAttr};
 use ember_core::control::power::{self, PowerState, Profile};
 use ember_core::control::procs::{self, ProcRow, Procs, Signal};
 use ember_core::control::services::{self, Action, Scope, Unit};
@@ -45,6 +46,9 @@ pub enum Msg {
     MaxPerf(u8),
     ApplyMaxPerf,
     SetPwm(String, u8),
+    SetThermal(String),
+    FwEdit(usize, u32),
+    FwApply(usize),
     // shared
     Done(String, CtlResult),
 }
@@ -67,6 +71,8 @@ pub struct Controls {
     cpu: cpu::CpuCtl,
     max_perf: u8,
     graphics_pending: Option<String>,
+    /// firmware power/thermal limits, plus the slider value being edited for each
+    fw: Vec<(FwAttr, u32)>,
     status: Option<(String, bool)>,
 }
 
@@ -90,6 +96,7 @@ impl Default for Controls {
             max_perf: cpu.max_perf.unwrap_or(100),
             cpu,
             graphics_pending: None,
+            fw: firmware::refresh(&[]),
             status: None,
         }
     }
@@ -201,6 +208,17 @@ impl Controls {
                     return helper(format!("Fan {chip}/{pwm} set to {v}"), vec!["pwm".into(), chip.into(), idx, v.to_string()]);
                 }
             }
+            Msg::SetThermal(t) => return helper(format!("Fan mode: {}", cpu::thermal_label(&t)), vec!["thermal".into(), t]),
+            Msg::FwEdit(i, v) => {
+                if let Some(e) = self.fw.get_mut(i) {
+                    e.1 = v;
+                }
+            }
+            Msg::FwApply(i) => {
+                if let Some((a, v)) = self.fw.get(i) {
+                    return helper(format!("{} set to {v} {}", a.label, a.unit()), vec!["fwattr".into(), a.device.clone(), a.name.clone(), v.to_string()]);
+                }
+            }
             Msg::Done(what, r) => {
                 self.status = Some(match r {
                     Ok(()) => (format!("Done: {what}"), false),
@@ -208,6 +226,7 @@ impl Controls {
                 });
                 // re-read state after any change
                 self.cpu = cpu::read_state();
+                self.fw = firmware::refresh(&self.fw);
                 self.max_perf = self.cpu.max_perf.unwrap_or(self.max_perf);
                 self.rows = self.procs.list();
                 let mut tasks = vec![load_power()];
@@ -466,8 +485,20 @@ impl Controls {
 
         // fans (only writable pwm nodes)
         let mut fan_col = column::with_capacity(8).spacing(12).push(heading("Fans"));
+        if !c.thermals.is_empty() {
+            let mut r = row::with_capacity(8).spacing(12).align_y(Alignment::Center).push(body("Fan mode"));
+            for t in &c.thermals {
+                let current = c.thermal.as_ref() == Some(t);
+                r = r.push(comic_button(cpu::thermal_label(t), (!current).then(|| Message::Ctl(Msg::SetThermal(t.clone()))), CYAN, current));
+            }
+            fan_col =
+                fan_col.push(muted("Firmware thermal mode: picks the fan curve and power limits. Changing the power profile above may reset it.")).push(r);
+        }
+        if !self.fw.is_empty() {
+            col = col.push(self.custom_card());
+        }
         let writable: Vec<&Fan> = fans.iter().filter(|f| f.pwm.is_some()).collect();
-        if writable.is_empty() {
+        if writable.is_empty() && c.thermals.is_empty() {
             fan_col = fan_col.push(muted("No controllable fans: the firmware keeps fan speed to itself."));
         } else {
             for f in writable {
@@ -480,5 +511,33 @@ impl Controls {
             }
         }
         page(col.push(card(fan_col)))
+    }
+
+    /// Custom-mode power and thermal limits (firmware-attributes).
+    fn custom_card(&self) -> Element<'_, Message> {
+        let custom = self.cpu.thermal.as_deref() == Some("custom");
+        let has_custom = self.cpu.thermals.iter().any(|t| t == "custom");
+        let note = if custom || !has_custom {
+            "Power and temperature limits the firmware uses in Custom mode. Higher limits mean more heat and louder fans."
+        } else {
+            "Set Fan mode to Custom to change these. Higher limits mean more heat and louder fans."
+        };
+        let enabled = custom || !has_custom;
+        let mut c = column::with_capacity(16).spacing(12).push(heading("Custom mode")).push(muted(note));
+        for (i, (a, v)) in self.fw.iter().enumerate() {
+            let u = a.unit();
+            let reset = a.default.filter(|d| d != v).map(|d| Message::Ctl(Msg::FwEdit(i, d)));
+            c = c.push(
+                row::with_capacity(8)
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(widget::container(body(a.label.clone())).width(Length::Fixed(300.0)))
+                    .push(widget::slider(a.min..=a.max, *v, move |n| Message::Ctl(Msg::FwEdit(i, n))).step(a.step).width(Length::Fixed(240.0)))
+                    .push(widget::container(body(format!("{v} {u}"))).width(Length::Fixed(70.0)))
+                    .push(comic_button("Apply", (enabled && *v != a.value).then_some(Message::Ctl(Msg::FwApply(i))), YELLOW, true))
+                    .push(comic_button("Default", reset, CYAN, false)),
+            );
+        }
+        card(c)
     }
 }

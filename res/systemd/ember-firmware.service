@@ -1,0 +1,13 @@
+[Unit]
+Description=Ember: restore saved fan mode and custom power limits
+Documentation=https://github.com/n1th1n-19/ember
+# power daemons set their own profile at startup; apply ours after them
+After=com.system76.PowerDaemon.service power-profiles-daemon.service tuned-ppd.service
+ConditionPathExists=/etc/ember/firmware.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/ember/ember-helper restore
+
+[Install]
+WantedBy=multi-user.target

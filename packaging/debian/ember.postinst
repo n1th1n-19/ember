@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# restores the fan mode and custom limits saved from Ember at every boot
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable ember-firmware.service >/dev/null 2>&1 || true
+fi
+exit 0
